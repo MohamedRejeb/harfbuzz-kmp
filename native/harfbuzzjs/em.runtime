@@ -1,0 +1,12 @@
+addFunction
+removeFunction
+stackAlloc
+stackSave
+stackRestore
+wasmExports
+HEAP8
+HEAPU8
+HEAPU16
+HEAP32
+HEAPU32
+HEAPF32

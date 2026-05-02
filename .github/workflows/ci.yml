@@ -1,0 +1,209 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs when a new commit is pushed to a PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx4g"
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Linux: JVM + Android + Wasm. The widest coverage lane — everything that
+  # doesn't need Apple toolchains runs here. Linux's ubuntu-latest image
+  # ships Chrome (for wasmJsBrowserTest) and the Android command-line tools.
+  # ─────────────────────────────────────────────────────────────────────────
+  linux:
+    name: JVM + Android + Wasm (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Cache Kotlin/Native distribution + Konan deps. ~700 MB, slow to
+      # download — pinning by checksum of the gradle wrapper means the
+      # cache only invalidates on Kotlin upgrades.
+      - name: Cache Konan
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.konan
+            ~/.gradle/caches/kotlin-native
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+          restore-keys: konan-${{ runner.os }}-
+
+      # Cache the kotlin-npm-tooling node_modules used by wasmJs tests.
+      # Keying on the local-fork wasm + its package.json is enough — the
+      # workspace's other deps (compose-test, copy-webpack-plugin) are
+      # pinned via the gradle/yarn lockfiles which the gradle plugin
+      # tracks separately.
+      - name: Cache wasm node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.kotlin/kotlin-npm-tooling
+          key: wasm-${{ runner.os }}-${{ hashFiles('native/harfbuzzjs/package.json', 'native/harfbuzzjs/hb.wasm', 'harfbuzz-core/build.gradle.kts', 'gradle/libs.versions.toml') }}
+          restore-keys: wasm-${{ runner.os }}-
+
+      - uses: gradle/actions/setup-gradle@v3
+
+      # ─── Build all targets ────────────────────────────────────────────────
+      - name: Compile harfbuzz-core (JVM + Android + Wasm)
+        run: |
+          ./gradlew :harfbuzz-core:compileKotlinJvm \
+                    :harfbuzz-core:compileDebugKotlinAndroid \
+                    :harfbuzz-core:compileKotlinWasmJs
+
+      - name: Compile harfbuzz-compose (JVM + Android + Wasm)
+        run: |
+          ./gradlew :harfbuzz-compose:compileKotlinJvm \
+                    :harfbuzz-compose:compileDebugKotlinAndroid \
+                    :harfbuzz-compose:compileKotlinWasmJs
+
+      # ─── JVM tests ─── headless Compose Desktop runs against skiko's
+      # offscreen surface, so no xvfb / display server needed.
+      - name: Run JVM unit tests (core)
+        run: ./gradlew :harfbuzz-core:jvmTest
+
+      - name: Run JVM unit tests (compose)
+        run: ./gradlew :harfbuzz-compose:jvmTest
+
+      - name: Run JVM screenshot tests (sample, 44 goldens)
+        run: ./gradlew :sample:jvmTest
+
+      # ─── Wasm browser tests ─── ubuntu-latest ships Chrome stable; karma's
+      # ChromeHeadless launcher picks it up automatically.
+      - name: Run Wasm browser tests
+        run: ./gradlew :harfbuzz-compose:wasmJsBrowserTest
+
+      - name: Build Wasm browser distribution
+        run: ./gradlew :sample:wasmJsBrowserDistribution
+
+      # ─── Android AAR ──────────────────────────────────────────────────────
+      - name: Build Android AAR (release)
+        run: ./gradlew :harfbuzz-core:assembleRelease :harfbuzz-compose:assembleRelease
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-test-reports
+          path: |
+            **/build/reports/tests/**
+            **/build/test-results/**
+          retention-days: 7
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # macOS: iOS + macOS native lib. The only place we can cross-compile
+  # HarfBuzz to iOS via xcrun + CMake. Also runs JVM tests with the macOS
+  # dylib so the Apple-side host build stays green.
+  # ─────────────────────────────────────────────────────────────────────────
+  macos:
+    name: iOS + macOS native (macos)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Cache Konan
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.konan
+            ~/.gradle/caches/kotlin-native
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+          restore-keys: konan-${{ runner.os }}-
+
+      - uses: gradle/actions/setup-gradle@v3
+
+      # Build HarfBuzz static .a for both iOS arch slices, then run the
+      # cinterop + Kotlin compile — verifies the JNI/cinterop bridge,
+      # IosPaintFuncs.kt's staticCFunction lambdas, and the SVG renderer
+      # all link cleanly.
+      - name: Build HarfBuzz iOS static libs
+        run: |
+          ./gradlew :harfbuzz-core:buildHarfBuzzIosArm64 \
+                    :harfbuzz-core:buildHarfBuzzIosSimulatorArm64
+
+      - name: Compile + link iOS frameworks
+        run: |
+          ./gradlew :harfbuzz-core:compileKotlinIosArm64 \
+                    :harfbuzz-core:compileKotlinIosSimulatorArm64 \
+                    :harfbuzz-core:linkDebugFrameworkIosSimulatorArm64 \
+                    :harfbuzz-compose:compileKotlinIosArm64 \
+                    :harfbuzz-compose:compileKotlinIosSimulatorArm64
+
+      # Same JVM screenshot tests, but on macOS — exercises the dylib
+      # build for both arm64 (Apple Silicon runner) and x86_64 (legacy
+      # macos runners). Goldens are CRLF-safe PNGs.
+      - name: Run JVM tests on macOS (core + sample)
+        run: |
+          ./gradlew :harfbuzz-core:jvmTest \
+                    :sample:jvmTest
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-test-reports
+          path: |
+            **/build/reports/tests/**
+            **/build/test-results/**
+          retention-days: 7
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Windows: JVM only. Confirms the .dll links and the JNI surface works
+  # cross-platform. We don't run sample's screenshot tests here because the
+  # bundled Compose Desktop on windows-latest occasionally needs explicit
+  # display config to capture goldens — keeping core's tests is enough to
+  # gate the JNI on Windows.
+  # ─────────────────────────────────────────────────────────────────────────
+  windows:
+    name: JVM (windows)
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v3
+
+      - name: Build Desktop dll + run core JVM tests
+        run: ./gradlew :harfbuzz-core:jvmTest
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-test-reports
+          path: |
+            **/build/reports/tests/**
+            **/build/test-results/**
+          retention-days: 7

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>harfbuzz-kmp</title>
+    <link type="text/css" rel="stylesheet" href="styles.css">
+
+    <!--
+      Preload every font the page eagerly loads on first paint so the
+      browser kicks off the fetches in parallel with sample.js (no
+      waiting for Compose to mount + LaunchedEffects to fire). By the
+      time `Res.readBytes` runs these are cache hits.
+      `as="fetch"` (rather than `as="font"`) is required because we
+      consume the bytes via the resources fetch pipeline, not as a
+      `@font-face` source. See
+      https://kotlinlang.org/docs/multiplatform/compose-web-resources.html
+    -->
+    <link rel="preload" as="fetch" type="font/ttf" crossorigin
+          href="./composeResources/harfbuzz_kmp.sample.generated.resources/font/NotoNaskhArabic-Regular.ttf"/>
+    <link rel="preload" as="fetch" type="font/ttf" crossorigin
+          href="./composeResources/harfbuzz_kmp.sample.generated.resources/font/NotoNaskhArabic-Medium.ttf"/>
+    <link rel="preload" as="fetch" type="font/ttf" crossorigin
+          href="./composeResources/harfbuzz_kmp.sample.generated.resources/font/NotoNaskhArabic-Bold.ttf"/>
+    <link rel="preload" as="fetch" type="font/ttf" crossorigin
+          href="./composeResources/harfbuzz_kmp.sample.generated.resources/font/Roboto-Regular.ttf"/>
+    <link rel="preload" as="fetch" type="font/ttf" crossorigin
+          href="./composeResources/harfbuzz_kmp.sample.generated.resources/font/ArefRuqaaInk-Regular.ttf"/>
+    <link rel="preload" as="fetch" type="font/ttf" crossorigin
+          href="./composeResources/harfbuzz_kmp.sample.generated.resources/font/NotoColorEmoji-Regular.ttf"/>
+    <link rel="preload" as="fetch" type="font/ttf" crossorigin
+          href="./composeResources/harfbuzz_kmp.sample.generated.resources/font/Trox-R.ttf"/>
+</head>
+<body style="text-align: center; align-content: center">
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 50 50" role="presentation">
+    <circle cx="25" cy="25" r="20" stroke="#ccc" stroke-width="4" fill="none"/>
+    <circle cx="25" cy="25" r="20" stroke="#333" stroke-width="4" fill="none" stroke-linecap="round"
+            stroke-dasharray="90 125">
+        <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="1s"
+                          repeatCount="indefinite"/>
+    </circle>
+</svg>
+<script type="application/javascript" src="sample.js"></script>
+</body>
+</html>

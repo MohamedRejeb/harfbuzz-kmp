@@ -1,0 +1,32 @@
+*.iml
+.kotlin
+.gradle
+**/build/
+xcuserdata
+!src/**/build/
+local.properties
+.idea
+.DS_Store
+captures
+.externalNativeBuild
+.cxx
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcodeproj/project.xcworkspace/
+!*.xcworkspace/contents.xcworkspacedata
+**/xcshareddata/WorkspaceSettings.xcsettings
+node_modules/
+kotlin-js-store
+
+# Local working notes and design drafts (kept out of git per project convention)
+plans/
+
+# Claude Code agent configuration and notes
+.claude/
+CLAUDE.md
+
+# Native libraries built locally for Desktop JVM, produced by the
+# configureNativeJvm/buildNativeJvm/copyNativeJvm task chain. CI publishes
+# the canonical artifacts; local checkouts rebuild on demand.
+harfbuzz-core/src/jvmMain/resources/native/

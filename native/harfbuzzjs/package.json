@@ -1,0 +1,15 @@
+{
+  "name": "kotlin-harfbuzzjs",
+  "version": "0.0.2",
+  "private": true,
+  "description": "Local fork of harfbuzzjs with COLR/CPAL paint API enabled. Built from native/harfbuzz/ via em++. See Makefile for the diff vs upstream — just config-override.h tweaks (undef HB_NO_COLOR/HB_NO_PAINT) and an expanded hb.symbols.",
+  "main": "index.js",
+  "files": [
+    "hb.js",
+    "hb.wasm",
+    "hbjs.js",
+    "hb-worker.js",
+    "index.js",
+    "LICENSE"
+  ]
+}

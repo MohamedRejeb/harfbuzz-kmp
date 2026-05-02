@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <!--
+          Pre-warms libharfbuzz_jni.so on app process start so the first
+          composable that needs HarfBuzz doesn't wait for System.loadLibrary
+          on the cold-paint timeline. Disable with tools:node="remove" if
+          you'd rather control startup explicitly.
+        -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="com.mohamedrejeb.harfbuzz.core.HarfBuzzInitializer"
+                android:value="androidx.startup" />
+        </provider>
+    </application>
+</manifest>
