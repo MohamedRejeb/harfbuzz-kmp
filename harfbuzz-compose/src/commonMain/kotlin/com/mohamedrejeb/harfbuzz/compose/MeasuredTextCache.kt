@@ -81,12 +81,12 @@ internal fun clearMeasuredTextCacheForTest() {
  * different fallback orders don't collide. The list holds [HbFont]
  * references directly: equality is identity-based (`HbFont` doesn't
  * override `equals`), so two distinct font instances built from the
- * same face+pointSize but different variation axes - e.g.
- * `face.toFont(16f, listOf(Variation("wght", 400)))` vs
- * `face.toFont(16f, listOf(Variation("wght", 700)))` - produce
- * different keys and don't collide. The trade-off is that two
- * independently-constructed [HbFont]s with the same configuration
- * never share a cache entry, but the practical caller pattern
+ * same face but different variation axes - e.g.
+ * `face.toFont(listOf(Variation("wght", 400)))` vs
+ * `face.toFont(listOf(Variation("wght", 700)))` - produce different
+ * keys and don't collide. The trade-off is that two independently-
+ * constructed [HbFont]s with the same configuration never share a
+ * cache entry, but the practical caller pattern
  * (`remember(font) { HbFontStack(font) }`) preserves the font
  * reference across recomposition, so the cache still hits when it
  * matters.

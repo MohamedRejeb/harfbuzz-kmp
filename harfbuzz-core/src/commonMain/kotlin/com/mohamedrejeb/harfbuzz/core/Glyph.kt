@@ -14,7 +14,8 @@ public data class GlyphInfo(
 
 /**
  * Per-glyph positioning - an entry from `hb_buffer_get_glyph_positions`.
- * Values are in font units (em-relative) until scaled by `HbFont.pointSize`.
+ * Values are in pixel space when shaping was called with a positive
+ * `sizePx`; otherwise they are in font design units.
  */
 public data class GlyphPosition(
     public val xAdvance: Float,

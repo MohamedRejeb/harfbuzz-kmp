@@ -30,9 +30,9 @@ class WorkerInitTest {
     fun worker_bootstraps_and_shapes_one_paragraph() = runTest {
         harfBuzzInit()
         val face = HbFace.fromBytes(TestFontsWasm.robotoRegular())
-        val font = face.toFont(16f)
+        val font = face.toFont()
         try {
-            val paragraph = font.shapeParagraph("hello")
+            val paragraph = font.shapeParagraph("hello", sizePx = 16f)
             assertTrue(paragraph.runs.isNotEmpty(), "expected at least one run")
             assertTrue(paragraph.totalAdvance > 0f, "expected positive advance")
         } finally {

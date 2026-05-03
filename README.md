@@ -55,7 +55,6 @@ dependencies {
 fun ArabicSample() {
     val state by rememberHbFont(
         bytesProvider = { Res.readBytes("font/NotoNaskhArabic-Regular.ttf") },
-        sizePx = 32f,
     )
     when (val s = state) {
         FontLoad.Loading   -> CircularProgressIndicator()
@@ -63,6 +62,7 @@ fun ArabicSample() {
         is FontLoad.Ready  -> ShapedText(
             text = "نَصٌّ عَرَبِيٌّ مُشَكَّلٌ لِلْاِخْتِبَارِ",
             font = s.font,
+            sizePx = 32f,
             features = listOf(HbFeature("liga"), HbFeature("calt"), HbFeature("rlig")),
         )
     }
@@ -74,10 +74,9 @@ fun ArabicSample() {
 ```kotlin
 val state by rememberHbFont(
     bytesProvider = { Res.readBytes("font/NotoColorEmoji-Regular.ttf") },
-    sizePx = 64f,
 )
 (state as? FontLoad.Ready)?.let {
-    ShapedText("😀🌍🎉⭐", font = it.font)
+    ShapedText("😀🌍🎉⭐", font = it.font, sizePx = 64f)
 }
 ```
 
@@ -103,6 +102,7 @@ chooses.
 ArcText(
     text = "نص عربي تجريبي للاختبار",
     font = arabicFont,
+    sizePx = 32f,
     radius = 120.dp,
     sweep = ArcSweep.Auto,
     color = MaterialTheme.colorScheme.primary,

@@ -137,8 +137,8 @@ val emojiBytes = readResource("fonts/NotoColorEmoji-Regular.ttf")
 val stack = HbFontStack(
     primary = userFont,
     fallbacks = listOf(
-        HbFace.from { bytes(arabicBytes) }.toFont(pointSize),
-        HbFace.from { bytes(emojiBytes) }.toFont(pointSize),
+        HbFace.from { bytes(arabicBytes) }.toFont(),
+        HbFace.from { bytes(emojiBytes) }.toFont(),
     ),
     // System layer remains as a last-ditch safety net for codepoints
     // even the bundled fallbacks miss.

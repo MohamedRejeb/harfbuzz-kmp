@@ -13,7 +13,7 @@ import kotlin.test.Test
  *  - JNI library extraction + `System.load`
  *  - `HbFace.fromBytes` parse (scales with font size - the killer is
  *    Apple Color Emoji.ttc at 188 MB on macOS)
- *  - `face.toFont(pointSize)` mint
+ *  - `face.toFont()` mint
  *  - First shape on a brand-new font
  *  - Full pipeline: bytes → face → font → shape
  *  - Real system-font load via the JVM resolver (the Apple Color Emoji

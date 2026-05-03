@@ -30,7 +30,7 @@ import kotlin.coroutines.cancellation.CancellationException
  * when (val s = state) {
  *     FontLoad.Loading   -> CircularProgressIndicator()
  *     is FontLoad.Failed -> Text("Failed: ${s.cause.message}")
- *     is FontLoad.Ready  -> ShapedText("Hello", font = s.font)
+ *     is FontLoad.Ready  -> ShapedText("Hello", font = s.font, sizePx = 16f)
  * }
  * ```
  */
@@ -82,7 +82,7 @@ public fun rememberHbFont(face: HbFace): State<FontLoad> {
  * when (val s = state) {
  *     FontLoad.Loading   -> CircularProgressIndicator()
  *     is FontLoad.Failed -> Text("Failed: ${s.cause.message}")
- *     is FontLoad.Ready  -> ShapedText("مرحبا", font = s.font)
+ *     is FontLoad.Ready  -> ShapedText("مرحبا", font = s.font, sizePx = 24f)
  * }
  * ```
  *

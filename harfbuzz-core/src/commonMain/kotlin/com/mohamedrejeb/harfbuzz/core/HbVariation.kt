@@ -37,7 +37,8 @@ public data class HbVariationAxis(
 /**
  * One pinned axis value when constructing a variable font instance.
  * Pass a list of [HbVariation] to [HbFace.toFont] to produce an
- * [HbFont] sized at [pointSize] with the given axis values applied.
+ * [HbFont] with the given axis values applied. The font is sizeless;
+ * size is supplied per call to shape/glyph operations.
  *
  * @property tag The axis tag this value applies to.
  * @property value The axis value. Out-of-range values are clamped to

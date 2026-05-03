@@ -106,7 +106,7 @@ class AndroidColdInitBenchmarks {
             runBlocking {
                 val resolver = createSystemFontResolver(SystemFallback.Match())!!
                 try {
-                    resolver.fontFor(codepoint = 0x0644, pointSize = POINT_SIZE)
+                    resolver.fontFor(codepoint = 0x0644)
                 } finally {
                     resolver.close()
                 }
@@ -129,7 +129,7 @@ class AndroidColdInitBenchmarks {
                     SystemFallback.Match(preferColorEmoji = true),
                 )!!
                 try {
-                    resolver.fontFor(codepoint = 0x1F600, pointSize = POINT_SIZE)
+                    resolver.fontFor(codepoint = 0x1F600)
                 } finally {
                     resolver.close()
                 }
@@ -149,7 +149,7 @@ class AndroidColdInitBenchmarks {
             runBlocking {
                 val resolver = createSystemFontResolver(SystemFallback.Match())!!
                 try {
-                    resolver.fontFor(codepoint = 0x4E2D, pointSize = POINT_SIZE)
+                    resolver.fontFor(codepoint = 0x4E2D)
                 } finally {
                     resolver.close()
                 }
@@ -182,10 +182,10 @@ class AndroidColdInitBenchmarks {
             clearSharedSystemResolverCacheForTest()
             runBlocking {
                 val face = HbFace.fromBytes(primaryBytes)
-                val font = face.toFont(POINT_SIZE)
+                val font = face.toFont()
                 val stack = HbFontStack(font, system = SystemFallback.Match(preferColorEmoji = true))
                 try {
-                    stack.shapeParagraph("Hello مرحبا 你好 😀")
+                    stack.shapeParagraph("Hello مرحبا 你好 😀", sizePx = POINT_SIZE)
                 } finally {
                     stack.close()
                     font.close()
@@ -215,7 +215,7 @@ class AndroidColdInitBenchmarks {
             clearSharedSystemResolverCacheForTest()
             runBlocking {
                 val face = HbFace.fromBytes(primaryBytes)
-                val font = face.toFont(POINT_SIZE)
+                val font = face.toFont()
                 val stack = HbFontStack(font, system = SystemFallback.Match(preferColorEmoji = true))
                 try {
                     stack.prewarmSystemFallback()
@@ -249,7 +249,7 @@ class AndroidColdInitBenchmarks {
         runBlocking {
             clearSharedSystemResolverCacheForTest()
             val face = HbFace.fromBytes(primaryBytes)
-            val font = face.toFont(POINT_SIZE)
+            val font = face.toFont()
             val stack = HbFontStack(font, system = SystemFallback.Match(preferColorEmoji = true))
             try {
                 stack.prewarmSystemFallback()
@@ -262,10 +262,10 @@ class AndroidColdInitBenchmarks {
         benchN("first-render(prewarmed) Latin+Arabic+Emoji+CJK", warmup = 0, measure = 5) {
             runBlocking {
                 val face = HbFace.fromBytes(primaryBytes)
-                val font = face.toFont(POINT_SIZE)
+                val font = face.toFont()
                 val stack = HbFontStack(font, system = SystemFallback.Match(preferColorEmoji = true))
                 try {
-                    stack.shapeParagraph("Hello مرحبا 你好 😀")
+                    stack.shapeParagraph("Hello مرحبا 你好 😀", sizePx = POINT_SIZE)
                 } finally {
                     stack.close()
                     font.close()
