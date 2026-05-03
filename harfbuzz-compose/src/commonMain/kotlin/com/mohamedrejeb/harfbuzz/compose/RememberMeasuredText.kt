@@ -16,7 +16,12 @@ import com.mohamedrejeb.harfbuzz.core.MeasuredFontPass
 import com.mohamedrejeb.harfbuzz.core.RecordedPaintOp
 import com.mohamedrejeb.harfbuzz.core.buildMeasured
 import com.mohamedrejeb.harfbuzz.core.defaultFlagsFor
+import com.mohamedrejeb.harfbuzz.core.paragraph.ArabicTextUtils
+import com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy
+import com.mohamedrejeb.harfbuzz.core.paragraph.LineJustifier
+import com.mohamedrejeb.harfbuzz.core.paragraph.WordSpacingJustifier
 import com.mohamedrejeb.harfbuzz.core.runShapingWork
+import com.mohamedrejeb.harfbuzz.core.shapeParagraph
 import com.mohamedrejeb.harfbuzz.core.yieldToBrowser
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -39,9 +44,11 @@ public fun rememberMeasuredText(
     features: List<HbFeature> = emptyList(),
     direction: HbDirection = HbDirection.AUTO,
     language: HbLanguage = HbLanguage.AUTO,
+    maxWidth: Float = Float.POSITIVE_INFINITY,
+    justification: JustificationStrategy = JustificationStrategy.None,
 ): State<MeasuredTextLoad> {
     val stack = remember(font) { HbFontStack(font) }
-    return rememberMeasuredText(text, stack, features, direction, language)
+    return rememberMeasuredText(text, stack, features, direction, language, maxWidth, justification)
 }
 
 /**
@@ -50,6 +57,12 @@ public fun rememberMeasuredText(
  * the primary font cannot resolve falls back to [HbFontStack.fallbacks]
  * in order. Per-glyph caches end up partitioned by font, since glyph
  * ids are font-specific.
+ *
+ * If [maxWidth] is finite and [justification] is non-[None], the
+ * resulting [MeasuredText] is widened to match [maxWidth] by re-shaping
+ * with extra Kashida / thin-space glyphs (see [LineJustifier]). When
+ * the original advance already meets or exceeds [maxWidth] the input is
+ * returned as-is.
  */
 @Composable
 public fun rememberMeasuredText(
@@ -58,14 +71,18 @@ public fun rememberMeasuredText(
     features: List<HbFeature> = emptyList(),
     direction: HbDirection = HbDirection.AUTO,
     language: HbLanguage = HbLanguage.AUTO,
+    maxWidth: Float = Float.POSITIVE_INFINITY,
+    justification: JustificationStrategy = JustificationStrategy.None,
 ): State<MeasuredTextLoad> {
     return produceState<MeasuredTextLoad>(
         initialValue = MeasuredTextLoad.Loading,
-        text, fontStack, features, direction, language,
+        text, fontStack, features, direction, language, maxWidth, justification,
     ) {
         value = MeasuredTextLoad.Loading
         try {
-            val measured = buildMeasuredText(text, fontStack, features, direction, language)
+            val measured = buildMeasuredTextWithJustify(
+                text, fontStack, features, direction, language, maxWidth, justification,
+            )
             value = MeasuredTextLoad.Ready(measured)
         } catch (ce: CancellationException) {
             throw ce
@@ -82,6 +99,53 @@ public fun rememberMeasuredText(
             value = MeasuredTextLoad.Failed(cause)
         }
     }
+}
+
+/**
+ * Build a [MeasuredText] for [text]; if [maxWidth] is finite and
+ * [justification] is non-[JustificationStrategy.None], widen the line
+ * by inserting extra Kashida / thin-space glyphs and re-shape so the
+ * resulting advance approaches [maxWidth]. Returns the un-justified
+ * build whenever there is no slack to distribute (advance already at
+ * or beyond [maxWidth], empty text, no insertion points).
+ */
+internal suspend fun buildMeasuredTextWithJustify(
+    text: String,
+    fontStack: HbFontStack,
+    features: List<HbFeature>,
+    direction: HbDirection,
+    language: HbLanguage,
+    maxWidth: Float,
+    justification: JustificationStrategy,
+): MeasuredText {
+    val initial = buildMeasuredText(text, fontStack, features, direction, language)
+    if (
+        text.isEmpty() ||
+        justification == JustificationStrategy.None ||
+        maxWidth.isInfinite() ||
+        maxWidth <= 0f ||
+        initial.advance >= maxWidth
+    ) return initial
+
+    val kashidaWidth = if (justification == JustificationStrategy.Mixed) {
+        fontStack.shapeParagraph(
+            ArabicTextUtils.KASHIDA.toString(), direction, features, language,
+        ).totalAdvance
+    } else 0f
+    val thinSpaceWidth = fontStack.shapeParagraph(
+        WordSpacingJustifier.THIN_SPACE.toString(), direction, features, language,
+    ).totalAdvance
+
+    val justifiedText = LineJustifier.justify(
+        text = text,
+        strategy = justification,
+        currentWidth = initial.advance,
+        targetWidth = maxWidth,
+        kashidaGlyphWidth = kashidaWidth,
+        thinSpaceWidth = thinSpaceWidth,
+    )
+    if (justifiedText.length == text.length) return initial
+    return buildMeasuredText(justifiedText, fontStack, features, direction, language)
 }
 
 private fun isStaleHbHandle(cause: Throwable): Boolean =

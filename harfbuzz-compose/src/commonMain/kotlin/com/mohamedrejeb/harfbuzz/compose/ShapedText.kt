@@ -1,10 +1,13 @@
 package com.mohamedrejeb.harfbuzz.compose
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
@@ -13,19 +16,33 @@ import androidx.compose.ui.graphics.drawscope.DrawStyle
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntSize
 import com.mohamedrejeb.harfbuzz.core.HbDirection
 import com.mohamedrejeb.harfbuzz.core.HbFeature
 import com.mohamedrejeb.harfbuzz.core.HbFont
 import com.mohamedrejeb.harfbuzz.core.HbFontStack
+import com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy
+import com.mohamedrejeb.harfbuzz.core.paragraph.ParagraphAlignment
 import kotlin.math.ceil
-import kotlin.math.max
 
 /**
  * Render a single piece of text with one font, one color, one feature set.
- * v1's "I just want correct Arabic" composable. The full `BasicText` parity
- * (per-span styling, full TextStyle support) ships as v1.1's `ShapedBasicText`.
+ *
+ * Single-line layout: the composable shapes [text] once and lays it out
+ * within the parent's `maxWidth` constraint. Multi-line wrapping ships
+ * later through `ShapedParagraphText`; here, [softWrap] / [maxLines]
+ * are placeholders accepted for future API parity.
+ *
+ * - [alignment] positions the line within the available width. Reuses
+ *   [ParagraphAlignment] so single-line and paragraph call sites pick
+ *   from the same enum (Start/End/Left/Right/Center/Justify).
+ * - [justification] picks how a [ParagraphAlignment.Justify] line is
+ *   widened (Kashida vs thin-space). Ignored for non-Justify alignments.
+ *   Justify with [JustificationStrategy.None] falls back to Start.
+ * - [overflow] decides what happens when the shaped advance exceeds the
+ *   available width. [ShapedTextOverflow.Clip] (default) clips to the
+ *   bounds; [ShapedTextOverflow.Visible] lets glyphs paint outside;
+ *   [ShapedTextOverflow.Compress] scales per-glyph spacing so the line
+ *   fits the slot exactly (glyphs keep their size, spacing shrinks).
  */
 @Composable
 public fun ShapedText(
@@ -36,8 +53,10 @@ public fun ShapedText(
     features: List<HbFeature> = emptyList(),
     direction: HbDirection = HbDirection.AUTO,
     softWrap: Boolean = true,
-    overflow: TextOverflow = TextOverflow.Clip,
+    overflow: ShapedTextOverflow = ShapedTextOverflow.Clip,
     maxLines: Int = Int.MAX_VALUE,
+    alignment: ParagraphAlignment = ParagraphAlignment.Start,
+    justification: JustificationStrategy = JustificationStrategy.None,
     /**
      * For COLR v0 color fonts: by default each glyph paints with the
      * palette colors baked into the font (so e.g. Aref Ruqaa Ink renders
@@ -72,6 +91,8 @@ public fun ShapedText(
         softWrap = softWrap,
         overflow = overflow,
         maxLines = maxLines,
+        alignment = alignment,
+        justification = justification,
         forceForegroundColor = forceForegroundColor,
         style = style,
         shadow = shadow,
@@ -94,49 +115,175 @@ public fun ShapedText(
     features: List<HbFeature> = emptyList(),
     direction: HbDirection = HbDirection.AUTO,
     softWrap: Boolean = true,
-    overflow: TextOverflow = TextOverflow.Clip,
+    overflow: ShapedTextOverflow = ShapedTextOverflow.Clip,
     maxLines: Int = Int.MAX_VALUE,
+    alignment: ParagraphAlignment = ParagraphAlignment.Start,
+    justification: JustificationStrategy = JustificationStrategy.None,
     forceForegroundColor: Boolean = false,
     style: DrawStyle = Fill,
     shadow: Shadow? = null,
     onTextLayout: ((MeasuredText) -> Unit)? = null,
 ) {
-    val loadState by rememberMeasuredText(text, fontStack, features, direction)
+    val justifyOn = alignment == ParagraphAlignment.Justify &&
+        justification != JustificationStrategy.None
+
+    if (justifyOn) {
+        // Justify needs the slot width before shaping, so wrap in
+        // BoxWithConstraints to read it. The user's modifier sits on
+        // the outer wrapper.
+        BoxWithConstraints(modifier = modifier) {
+            val maxWidthPx = if (constraints.hasBoundedWidth)
+                constraints.maxWidth.toFloat() else Float.POSITIVE_INFINITY
+            ShapedTextBody(
+                text = text,
+                fontStack = fontStack,
+                modifier = Modifier,
+                color = color,
+                features = features,
+                direction = direction,
+                overflow = overflow,
+                alignment = alignment,
+                justification = justification,
+                justifyMaxWidth = maxWidthPx,
+                forceForegroundColor = forceForegroundColor,
+                style = style,
+                shadow = shadow,
+                onTextLayout = onTextLayout,
+            )
+        }
+    } else {
+        ShapedTextBody(
+            text = text,
+            fontStack = fontStack,
+            modifier = modifier,
+            color = color,
+            features = features,
+            direction = direction,
+            overflow = overflow,
+            alignment = alignment,
+            justification = justification,
+            justifyMaxWidth = Float.POSITIVE_INFINITY,
+            forceForegroundColor = forceForegroundColor,
+            style = style,
+            shadow = shadow,
+            onTextLayout = onTextLayout,
+        )
+    }
+    @Suppress("UNUSED_VARIABLE")
+    val unused = listOf(softWrap, maxLines)  // multi-line wrapping ships via ShapedParagraphText
+}
+
+@Composable
+private fun ShapedTextBody(
+    text: String,
+    fontStack: HbFontStack,
+    modifier: Modifier,
+    color: Color,
+    features: List<HbFeature>,
+    direction: HbDirection,
+    overflow: ShapedTextOverflow,
+    alignment: ParagraphAlignment,
+    justification: JustificationStrategy,
+    justifyMaxWidth: Float,
+    forceForegroundColor: Boolean,
+    style: DrawStyle,
+    shadow: Shadow?,
+    onTextLayout: ((MeasuredText) -> Unit)?,
+) {
+    val loadState by rememberMeasuredText(
+        text = text,
+        fontStack = fontStack,
+        features = features,
+        direction = direction,
+        maxWidth = justifyMaxWidth,
+        justification = justification,
+    )
     val resolvedColor = color.takeOrElse { Color.Black }
     val measured: MeasuredText? = (loadState as? MeasuredTextLoad.Ready)?.measured
 
-    // Notify the caller whenever a fresh Ready measurement lands.
     LaunchedEffect(measured) {
         if (measured != null) onTextLayout?.invoke(measured)
     }
 
+    // The DrawScope `size` inside drawBehind reflects the inner element's
+    // measured size (an empty Box, so 0x0 here), not what `Modifier.layout`
+    // reports to the parent. Mirror the chosen slot width to a state so
+    // drawBehind has a real number to align / clip against.
+    val slotWidth = remember { mutableFloatStateOf(0f) }
+
     Box(
         modifier = modifier
             .layout { measurable, constraints ->
-                val width = if (measured == null || measured.isEmpty) 0
-                else min(constraints.maxWidth, ceil(measured.advance).toInt().coerceAtLeast(0))
-                val height = if (measured == null || measured.isEmpty) 0
-                else ceil(measured.lineHeight).toInt().coerceAtLeast(0)
-                val placeable = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
-                layout(width, height) {
-                    placeable.place(0, 0)
+                if (measured == null || measured.isEmpty) {
+                    val placeable = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+                    slotWidth.floatValue = 0f
+                    return@layout layout(0, 0) { placeable.place(0, 0) }
                 }
+                val advancePx = ceil(measured.advance).toInt().coerceAtLeast(0)
+                // Cursive scripts (Arabic) can have ink extending past
+                // the pen advance, so check both for the Compress
+                // overflow trigger.
+                val naturalExtentPx = ceil(
+                    maxOf(measured.advance, measured.ink.right),
+                ).toInt().coerceAtLeast(0)
+                val width = when {
+                    overflow == ShapedTextOverflow.Visible ->
+                        minOf(constraints.maxWidth, advancePx)
+                    overflow == ShapedTextOverflow.Compress &&
+                        constraints.hasBoundedWidth &&
+                        naturalExtentPx > constraints.maxWidth ->
+                        // Compress always fills the slot - the line is
+                        // squeezed to fit so the reported size matches
+                        // the slot, not the natural advance.
+                        constraints.maxWidth
+                    constraints.hasBoundedWidth && alignment != ParagraphAlignment.Start ->
+                        constraints.maxWidth
+                    else -> minOf(constraints.maxWidth, advancePx)
+                }
+                val height = ceil(measured.lineHeight).toInt().coerceAtLeast(0)
+                slotWidth.floatValue = width.toFloat()
+                val placeable = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+                layout(width, height) { placeable.place(0, 0) }
             }
             .drawBehind {
                 if (measured != null) {
-                    drawShapedText(
-                        measured = measured,
-                        color = resolvedColor,
-                        style = style,
-                        forceForegroundColor = forceForegroundColor,
-                        shadow = shadow,
-                    )
+                    // Default Start with the box sized to the line's
+                    // advance is the legacy code path: pen at (0,0), no
+                    // alignment offset, no clip. The layout block above
+                    // shrinks the slot to `ceil(advance)` for Start, so
+                    // any residual slack is at most 1px of rounding -
+                    // routing that through the alignment-aware overload
+                    // would shift RTL glyphs right by the slack amount
+                    // (visible as a 1px AA jitter on Arabic). Only take
+                    // this fast path when the line actually fits the
+                    // slot - if it overflows, the new overload owns the
+                    // clip (or visible spill, depending on [overflow]).
+                    val isLegacyStart = alignment == ParagraphAlignment.Start &&
+                        slotWidth.floatValue >= measured.advance &&
+                        slotWidth.floatValue <= measured.advance + 1f
+                    if (isLegacyStart) {
+                        drawShapedText(
+                            measured = measured,
+                            color = resolvedColor,
+                            style = style,
+                            forceForegroundColor = forceForegroundColor,
+                            shadow = shadow,
+                        )
+                    } else {
+                        drawShapedText(
+                            measured = measured,
+                            availableWidth = slotWidth.floatValue,
+                            alignment = alignment,
+                            direction = measured.paragraph.baseDirection,
+                            overflow = overflow,
+                            color = resolvedColor,
+                            style = style,
+                            forceForegroundColor = forceForegroundColor,
+                            shadow = shadow,
+                        )
+                    }
                 }
             },
         content = {},
     )
-    @Suppress("UNUSED_VARIABLE")
-    val unused = listOf(softWrap, overflow, maxLines, IntSize.Zero)  // wired in v1.1's ShapedBasicText
 }
-
-private fun min(a: Int, b: Int): Int = if (a < b) a else b

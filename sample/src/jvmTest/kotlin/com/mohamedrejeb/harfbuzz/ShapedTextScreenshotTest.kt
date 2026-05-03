@@ -18,17 +18,21 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.getValue
 import com.mohamedrejeb.harfbuzz.compose.MeasuredText
 import com.mohamedrejeb.harfbuzz.compose.MeasuredTextLoad
 import com.mohamedrejeb.harfbuzz.compose.ShapedText
+import com.mohamedrejeb.harfbuzz.compose.ShapedTextOverflow
 import com.mohamedrejeb.harfbuzz.compose.drawShapedText
 import com.mohamedrejeb.harfbuzz.compose.rememberMeasuredText
 import com.mohamedrejeb.harfbuzz.core.HbDirection
 import com.mohamedrejeb.harfbuzz.core.HbFace
 import com.mohamedrejeb.harfbuzz.core.HbFeature
 import com.mohamedrejeb.harfbuzz.core.HbFont
+import com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy
+import com.mohamedrejeb.harfbuzz.core.paragraph.ParagraphAlignment
 import kotlin.math.ceil
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -478,6 +482,386 @@ class ShapedTextScreenshotTest {
         }
     }
 
+    // ===== Single-line alignment =====
+    //
+    // Each alignment test pins the [ShapedText] inside a fixed-width slot
+    // (cyan stroke) so the alignment offset is visually obvious. Latin and
+    // Arabic share the same slot width, so the LTR / RTL semantics of
+    // Start / End read off side-by-side.
+
+    @Test
+    fun `latin align start in slot`() {
+        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        rule.captureGolden("shaped_align_latin_start.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = "Hello world",
+                    font = font,
+                    slotWidth = 400.dp,
+                    alignment = ParagraphAlignment.Start,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `latin align end in slot`() {
+        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        rule.captureGolden("shaped_align_latin_end.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = "Hello world",
+                    font = font,
+                    slotWidth = 400.dp,
+                    alignment = ParagraphAlignment.End,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `latin align left in slot`() {
+        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        rule.captureGolden("shaped_align_latin_left.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = "Hello world",
+                    font = font,
+                    slotWidth = 400.dp,
+                    alignment = ParagraphAlignment.Left,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `latin align right in slot`() {
+        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        rule.captureGolden("shaped_align_latin_right.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = "Hello world",
+                    font = font,
+                    slotWidth = 400.dp,
+                    alignment = ParagraphAlignment.Right,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `latin align center in slot`() {
+        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        rule.captureGolden("shaped_align_latin_center.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = "Hello world",
+                    font = font,
+                    slotWidth = 400.dp,
+                    alignment = ParagraphAlignment.Center,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `arabic align end in slot`() {
+        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        rule.captureGolden("shaped_align_arabic_end.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = "مرحبا بالعالم",
+                    font = font,
+                    slotWidth = 400.dp,
+                    alignment = ParagraphAlignment.End,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `arabic align left in slot`() {
+        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        rule.captureGolden("shaped_align_arabic_left.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = "مرحبا بالعالم",
+                    font = font,
+                    slotWidth = 400.dp,
+                    alignment = ParagraphAlignment.Left,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `arabic align right in slot`() {
+        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        rule.captureGolden("shaped_align_arabic_right.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = "مرحبا بالعالم",
+                    font = font,
+                    slotWidth = 400.dp,
+                    alignment = ParagraphAlignment.Right,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `arabic align center in slot`() {
+        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        rule.captureGolden("shaped_align_arabic_center.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = "مرحبا بالعالم",
+                    font = font,
+                    slotWidth = 400.dp,
+                    alignment = ParagraphAlignment.Center,
+                )
+            }
+        }
+    }
+
+    // ===== Single-line justify =====
+    //
+    // Justify widens the line by re-shaping with extra glyphs (thin space
+    // for Latin, Kashida for Arabic when the strategy is Mixed). The slot
+    // outline shows the text inflating to the slot edges.
+
+    @Test
+    fun `latin justify wordspacing in slot`() {
+        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        rule.captureGolden("shaped_justify_latin_wordspacing.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = "Hello world from kotlin",
+                    font = font,
+                    slotWidth = 480.dp,
+                    alignment = ParagraphAlignment.Justify,
+                    justification = JustificationStrategy.WordSpacing,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `arabic justify kashida in slot`() {
+        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        rule.captureGolden("shaped_justify_arabic_kashida.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = "مرحبا بك في تجربة النص",
+                    font = font,
+                    slotWidth = 480.dp,
+                    alignment = ParagraphAlignment.Justify,
+                    justification = JustificationStrategy.Mixed,
+                )
+            }
+        }
+    }
+
+    // ===== Single-line overflow =====
+    //
+    // The slot is intentionally narrower than the shaped advance so the
+    // [ShapedTextOverflow] modes are visible:
+    //  - [ShapedTextOverflow.Clip] trims painted glyphs at the slot edge.
+    //  - [ShapedTextOverflow.Visible] lets glyphs paint past the edge.
+    //  - [ShapedTextOverflow.Compress] scales per-glyph spacing so the
+    //    line fits the slot exactly (glyphs may overlap).
+    //
+    // Latin tests use a Lorem Ipsum filler. Arabic tests use a generic
+    // sample so clipped output never lands mid-word in copyrighted /
+    // sacred text.
+
+    @Test
+    fun `latin overflow clip start`() {
+        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        rule.captureGolden("shaped_overflow_latin_clip_start.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = LATIN_LOREM,
+                    font = font,
+                    slotWidth = 200.dp,
+                    alignment = ParagraphAlignment.Start,
+                    overflow = ShapedTextOverflow.Clip,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `latin overflow clip end`() {
+        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        rule.captureGolden("shaped_overflow_latin_clip_end.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = LATIN_LOREM,
+                    font = font,
+                    slotWidth = 200.dp,
+                    alignment = ParagraphAlignment.End,
+                    overflow = ShapedTextOverflow.Clip,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `latin overflow clip center`() {
+        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        rule.captureGolden("shaped_overflow_latin_clip_center.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = LATIN_LOREM,
+                    font = font,
+                    slotWidth = 200.dp,
+                    alignment = ParagraphAlignment.Center,
+                    overflow = ShapedTextOverflow.Clip,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `latin overflow visible start`() {
+        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        rule.captureGolden("shaped_overflow_latin_visible_start.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = LATIN_LOREM,
+                    font = font,
+                    slotWidth = 200.dp,
+                    alignment = ParagraphAlignment.Start,
+                    overflow = ShapedTextOverflow.Visible,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `latin overflow compress start`() {
+        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        rule.captureGolden("shaped_overflow_latin_compress_start.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = LATIN_LOREM,
+                    font = font,
+                    slotWidth = 280.dp,
+                    alignment = ParagraphAlignment.Start,
+                    overflow = ShapedTextOverflow.Compress,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `arabic overflow clip start`() {
+        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        rule.captureGolden("shaped_overflow_arabic_clip_start.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = ARABIC_DUMMY,
+                    font = font,
+                    slotWidth = 240.dp,
+                    alignment = ParagraphAlignment.Start,
+                    overflow = ShapedTextOverflow.Clip,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `arabic overflow clip end`() {
+        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        rule.captureGolden("shaped_overflow_arabic_clip_end.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = ARABIC_DUMMY,
+                    font = font,
+                    slotWidth = 240.dp,
+                    alignment = ParagraphAlignment.End,
+                    overflow = ShapedTextOverflow.Clip,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `arabic overflow visible end`() {
+        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        rule.captureGolden("shaped_overflow_arabic_visible_end.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = ARABIC_DUMMY,
+                    font = font,
+                    slotWidth = 240.dp,
+                    alignment = ParagraphAlignment.End,
+                    overflow = ShapedTextOverflow.Visible,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `arabic overflow compress start`() {
+        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        rule.captureGolden("shaped_overflow_arabic_compress_start.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = ARABIC_DUMMY,
+                    font = font,
+                    slotWidth = 320.dp,
+                    alignment = ParagraphAlignment.Start,
+                    overflow = ShapedTextOverflow.Compress,
+                )
+            }
+        }
+    }
+
+    /**
+     * Renders [text] inside a fixed [slotWidth] x [slotHeight] box stroked in
+     * cyan so the alignment / justify / overflow effect is visible against
+     * the slot bounds. Reuses the same cyan as `ShapedTextWithBounds`'s
+     * logical-box overlay for consistency across the suite. The inner
+     * [ShapedText] is NOT wrapped in `fillMaxWidth()`: when alignment is
+     * [ParagraphAlignment.Start], the layout block reports the line's
+     * natural advance, so the text pins to the slot's leading edge instead
+     * of being centred by Compose's automatic constraint-clamping.
+     */
+    @Composable
+    private fun ShapedTextInSlot(
+        text: String,
+        font: HbFont,
+        slotWidth: Dp,
+        slotHeight: Dp = 48.dp,
+        alignment: ParagraphAlignment = ParagraphAlignment.Start,
+        justification: JustificationStrategy = JustificationStrategy.None,
+        overflow: ShapedTextOverflow = ShapedTextOverflow.Clip,
+        direction: HbDirection = HbDirection.AUTO,
+        color: Color = Color.Black,
+        slotColor: Color = Color(0xFF00BCD4),
+    ) {
+        Box(
+            modifier = Modifier
+                .width(slotWidth)
+                .height(slotHeight)
+                .drawBehind {
+                    drawRect(color = slotColor, style = Stroke(width = 1f))
+                },
+        ) {
+            ShapedText(
+                text = text,
+                font = font,
+                color = color,
+                direction = direction,
+                alignment = alignment,
+                justification = justification,
+                overflow = overflow,
+            )
+        }
+    }
+
     @Composable
     private fun Stage(content: @Composable () -> Unit) {
         Box(
@@ -490,6 +874,13 @@ class ShapedTextScreenshotTest {
                 content()
             }
         }
+    }
+
+    private companion object {
+        const val LATIN_LOREM =
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit"
+        const val ARABIC_DUMMY =
+            "نص تجريبي للاختبار يستخدم لعرض المظهر العام للنص العربي"
     }
 }
 

@@ -14,13 +14,16 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.DrawStyle
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import com.mohamedrejeb.harfbuzz.core.ColorLayer
+import com.mohamedrejeb.harfbuzz.core.HbDirection
 import com.mohamedrejeb.harfbuzz.core.HbFont
 import com.mohamedrejeb.harfbuzz.core.RecordedPaintOp
+import com.mohamedrejeb.harfbuzz.core.paragraph.ParagraphAlignment
 import com.mohamedrejeb.harfbuzz.core.replay
 
 /**
@@ -64,6 +67,202 @@ public fun DrawScope.drawShapedText(
     forceForegroundColor: Boolean = false,
     shadow: Shadow? = null,
 ) {
+    drawShapedTextInternal(
+        measured = measured,
+        topLeft = topLeft,
+        color = color,
+        alpha = alpha,
+        style = style,
+        blendMode = blendMode,
+        forceForegroundColor = forceForegroundColor,
+        shadow = shadow,
+        spacingScale = 1f,
+    )
+}
+
+/**
+ * Layout-aware overload: places [measured] within an [availableWidth]
+ * slot and applies single-line [alignment] + [overflow]. The text is
+ * assumed to be already justified (use [rememberMeasuredText] with a
+ * non-[com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy.None]
+ * strategy to bake Kashida / thin-space inserts into the [MeasuredText]).
+ *
+ * - [alignment] resolves against [direction] for Start / End. The line's
+ *   ink box is what's centred / pinned, not its raw advance, so glyphs
+ *   with side bearings (cursive Arabic, italic Latin) align to their
+ *   visual edges instead of the typesetter's whitespace.
+ * - [overflow] is [ShapedTextOverflow.Clip] (clip painted output to
+ *   `[topLeft.x, topLeft.x + availableWidth]`), [ShapedTextOverflow.Visible]
+ *   (no clip), or [ShapedTextOverflow.Compress] (scale per-glyph
+ *   spacing so the line fits the slot exactly).
+ */
+public fun DrawScope.drawShapedText(
+    measured: MeasuredText,
+    availableWidth: Float,
+    alignment: ParagraphAlignment = ParagraphAlignment.Start,
+    direction: HbDirection = measured.paragraph.baseDirection,
+    overflow: ShapedTextOverflow = ShapedTextOverflow.Clip,
+    topLeft: Offset = Offset.Zero,
+    color: Color = Color.Black,
+    alpha: Float = 1f,
+    style: DrawStyle = Fill,
+    blendMode: BlendMode = DrawScope.DefaultBlendMode,
+    forceForegroundColor: Boolean = false,
+    shadow: Shadow? = null,
+) {
+    if (measured.isEmpty) return
+    // The natural extent of a line is whichever is larger between the
+    // pen advance and the rightmost ink: cursive scripts (Arabic) often
+    // have glyph ink that reaches past the next pen origin (the joins
+    // are designed to overlap), so checking `advance` alone misses
+    // those overflow cases.
+    val naturalExtent = maxOf(measured.advance, measured.ink.right)
+    val overflowing = naturalExtent > availableWidth
+    // Compress: shrink the spacing between glyph origins so every
+    // glyph's ink lands inside the slot. Walking once is the only way
+    // to get this right - the "tightest" glyph isn't always the last
+    // one (for Arabic Naskh the cursive join glyph at index n-2 often
+    // has more ink overshoot than the terminal glyph). For a glyph
+    // whose origin lands at `cumAdvance * scale + xOffset`, the
+    // constraint is
+    //   cumAdvance * scale + xOffset + path.bounds.right <= availableWidth
+    // which solves to
+    //   scale <= (availableWidth - xOffset - path.bounds.right) / cumAdvance.
+    // Take the min across all glyphs (and clamp by `availableWidth /
+    // advance` so the pen also lands inside the slot).
+    val spacingScale = if (
+        overflow == ShapedTextOverflow.Compress &&
+        overflowing &&
+        availableWidth > 0f &&
+        measured.advance > 0f
+    ) computeCompressScale(measured, availableWidth) else 1f
+
+    val xOffset = if (spacingScale < 1f) {
+        // The compressed line spans exactly [0, availableWidth] from the
+        // pen, so alignment offset is zero - the line is anchored to the
+        // slot's leading edge regardless of [alignment].
+        0f
+    } else {
+        computeAlignmentOffset(measured, availableWidth, alignment, direction)
+    }
+    val penTopLeft = Offset(topLeft.x + xOffset, topLeft.y)
+
+    // Skip clipping when the line already fits within the slot - clipping
+    // a non-overflowing line trims AA pixels from glyph side bearings and
+    // changes pixel-exact output for no semantic gain. Compress always
+    // fits by definition, so it never needs clipping.
+    val needsClip = overflow == ShapedTextOverflow.Clip && overflowing
+    if (!needsClip) {
+        drawShapedTextInternal(
+            measured = measured,
+            topLeft = penTopLeft,
+            color = color,
+            alpha = alpha,
+            style = style,
+            blendMode = blendMode,
+            forceForegroundColor = forceForegroundColor,
+            shadow = shadow,
+            spacingScale = spacingScale,
+        )
+        return
+    }
+    clipRect(
+        left = topLeft.x,
+        top = topLeft.y,
+        right = topLeft.x + availableWidth,
+        bottom = topLeft.y + measured.lineHeight,
+    ) {
+        drawShapedTextInternal(
+            measured = measured,
+            topLeft = penTopLeft,
+            color = color,
+            alpha = alpha,
+            style = style,
+            blendMode = blendMode,
+            forceForegroundColor = forceForegroundColor,
+            shadow = shadow,
+            spacingScale = spacingScale,
+        )
+    }
+}
+
+/**
+ * Largest scale `s` such that every glyph in [measured] - drawn at
+ * `(cumAdvance_k * s) + xOffset_k` with its natural ink extent - lands
+ * inside `[0, availableWidth]`. Walks every glyph once, looks up its
+ * silhouette path's bounds, and takes the min across both the pen
+ * constraint (`availableWidth / advance`) and the per-glyph ink
+ * constraint. Glyphs with no available silhouette (color SVG / COLR
+ * bitmaps) fall back to the glyph's `xAdvance` as the ink-right
+ * estimate, which is correct for non-cursive content.
+ */
+private fun computeCompressScale(measured: MeasuredText, availableWidth: Float): Float {
+    var scale = availableWidth / measured.advance
+    var cumAdvance = 0f
+    for (run in measured.paragraph.runs) {
+        val font = run.font ?: measured.font
+        val paths = measured.flippedPathsByFont[font]
+        for (i in run.glyphs.indices) {
+            val pos = run.positions[i]
+            val gid = run.glyphs[i].glyphId
+            val inkRightOffset = paths?.get(gid)?.getBounds()?.right ?: pos.xAdvance
+            val totalRight = pos.xOffset + inkRightOffset
+            if (cumAdvance > 0f) {
+                val maxForGlyph = (availableWidth - totalRight) / cumAdvance
+                if (maxForGlyph < scale) scale = maxForGlyph
+            }
+            cumAdvance += pos.xAdvance
+        }
+    }
+    return scale.coerceIn(0f, 1f)
+}
+
+/**
+ * Single-line alignment offset. Uses the line's typographic advance,
+ * not its ink rect, so the result matches what `BasicText` does (and
+ * what existing single-line callers already rely on): Start lands the
+ * pen at the slot edge, Right pins the trailing edge of the advance,
+ * Center distributes the leftover slack symmetrically. Side bearings
+ * stay on the same side of the slot they had before alignment ran -
+ * this is intentional, since callers who want ink-on-edge alignment
+ * already have access to [MeasuredText.ink] and can adjust [topLeft]
+ * directly.
+ */
+private fun computeAlignmentOffset(
+    measured: MeasuredText,
+    availableWidth: Float,
+    alignment: ParagraphAlignment,
+    direction: HbDirection,
+): Float {
+    val advance = measured.advance
+    val slack = availableWidth - advance
+    return when (alignment) {
+        ParagraphAlignment.Start ->
+            if (direction == HbDirection.RTL) slack else 0f
+        ParagraphAlignment.End ->
+            if (direction == HbDirection.RTL) 0f else slack
+        ParagraphAlignment.Left -> 0f
+        ParagraphAlignment.Right -> slack
+        ParagraphAlignment.Center -> slack / 2f
+        // Justify widens upstream so [advance] already approaches
+        // [availableWidth]; the residual slack is rounding only and
+        // the line pins to the start edge.
+        ParagraphAlignment.Justify ->
+            if (direction == HbDirection.RTL) slack else 0f
+    }
+}
+
+private fun DrawScope.drawShapedTextInternal(
+    measured: MeasuredText,
+    topLeft: Offset,
+    color: Color,
+    alpha: Float,
+    style: DrawStyle,
+    blendMode: BlendMode,
+    forceForegroundColor: Boolean,
+    shadow: Shadow?,
+    spacingScale: Float,
+) {
     if (measured.isEmpty) return
 
     val baselineY = topLeft.y + measured.baseline
@@ -79,6 +278,7 @@ public fun DrawScope.drawShapedText(
             alpha = alpha,
             style = style,
             blendMode = blendMode,
+            spacingScale = spacingScale,
         )
     }
 
@@ -107,7 +307,9 @@ public fun DrawScope.drawShapedText(
             val pos = run.positions[i]
 
             // HarfBuzz emits y_offset / y_advance in Y-up convention;
-            // Compose's translate top is Y-down, so negate.
+            // Compose's translate top is Y-down, so negate. The glyph
+            // is drawn at its full size; only the spacing between
+            // glyphs is scaled by [spacingScale] (Compress overflow).
             val drawX = localX + pos.xOffset
             val drawY = localY - pos.yOffset
 
@@ -123,7 +325,7 @@ public fun DrawScope.drawShapedText(
                 )
             }
 
-            localX += pos.xAdvance
+            localX += pos.xAdvance * spacingScale
             localY += pos.yAdvance
         }
         loopX = localX
@@ -145,6 +347,7 @@ private fun DrawScope.drawShadowPass(
     alpha: Float,
     style: DrawStyle,
     blendMode: BlendMode,
+    spacingScale: Float,
 ) {
     val paint = Paint().apply {
         color = shadow.color
@@ -173,7 +376,7 @@ private fun DrawScope.drawShadowPass(
                     canvas.drawPath(path, paint)
                     canvas.restore()
                 }
-                localX += pos.xAdvance
+                localX += pos.xAdvance * spacingScale
                 localY += pos.yAdvance
             }
             localPenX = localX
