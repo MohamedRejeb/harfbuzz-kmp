@@ -55,6 +55,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.Font
 import com.mohamedrejeb.harfbuzz.compose.ArcSide
@@ -64,10 +65,13 @@ import com.mohamedrejeb.harfbuzz.compose.FontLoad
 import com.mohamedrejeb.harfbuzz.compose.MeasuredText
 import com.mohamedrejeb.harfbuzz.compose.MeasuredTextLoad
 import com.mohamedrejeb.harfbuzz.compose.ShapedText
+import com.mohamedrejeb.harfbuzz.compose.ShapedTextOverflow
 import com.mohamedrejeb.harfbuzz.compose.drawShapedText
 import com.mohamedrejeb.harfbuzz.compose.rememberHbFace
 import com.mohamedrejeb.harfbuzz.compose.rememberHbFont
 import com.mohamedrejeb.harfbuzz.compose.rememberMeasuredText
+import com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy
+import com.mohamedrejeb.harfbuzz.core.paragraph.ParagraphAlignment
 import com.mohamedrejeb.harfbuzz.core.HbDirection
 import com.mohamedrejeb.harfbuzz.core.HbFace
 import com.mohamedrejeb.harfbuzz.core.HbFeature
@@ -491,6 +495,7 @@ private fun LazyListScope.demoSections(
         }
     }
     item("bounds") { Box(itemModifier) { BoundsDemo(latin, arabic) } }
+    item("line-layout") { Box(itemModifier) { LineLayoutDemo(latin, arabic) } }
     item("dynamic") { Box(itemModifier) { DynamicTextDemo(latin, arabic) } }
     item("arc") { Box(itemModifier) { ArcTextDemo(arabicBold) } }
 }
@@ -925,6 +930,96 @@ private fun BoundsDemo(latin: HbFont, arabic: HbFont) {
             font = arabic,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/**
+ * Showcases single-line `ShapedText` placement within a fixed-width
+ * slot: alignment, kashida / word-spacing justify, and the three
+ * overflow modes (Clip / Visible / Compress). The cyan stroke marks
+ * the slot bounds so the alignment offset and overflow behaviour read
+ * off visually.
+ */
+@Composable
+private fun LineLayoutDemo(latin: HbFont, arabic: HbFont) {
+    DemoCard(
+        title = "Line alignment, justify, overflow",
+        subtitle = "Cyan box marks the slot bounds for each line.",
+    ) {
+        OutputLabel("Latin: Start / Center / End in a 320 dp slot")
+        SlotLine(latin, "Hello world", 320.dp, ParagraphAlignment.Start)
+        SlotLine(latin, "Hello world", 320.dp, ParagraphAlignment.Center)
+        SlotLine(latin, "Hello world", 320.dp, ParagraphAlignment.End)
+
+        OutputLabel("Arabic: Right / Center / Left in a 320 dp slot")
+        SlotLine(arabic, "مرحبا بالعالم", 320.dp, ParagraphAlignment.Right)
+        SlotLine(arabic, "مرحبا بالعالم", 320.dp, ParagraphAlignment.Center)
+        SlotLine(arabic, "مرحبا بالعالم", 320.dp, ParagraphAlignment.Left)
+
+        OutputLabel("Justify: word-spacing (Latin) and Kashida (Arabic)")
+        SlotLine(
+            font = latin,
+            text = "Hello world from kotlin",
+            slot = 360.dp,
+            alignment = ParagraphAlignment.Justify,
+            justification = JustificationStrategy.WordSpacing,
+        )
+        SlotLine(
+            font = arabic,
+            text = "مرحبا بك في تجربة النص",
+            slot = 360.dp,
+            alignment = ParagraphAlignment.Justify,
+            justification = JustificationStrategy.Mixed,
+        )
+
+        OutputLabel("Overflow modes (text is wider than the 220 dp slot)")
+        SlotLine(
+            font = latin,
+            text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit",
+            slot = 220.dp,
+            overflow = ShapedTextOverflow.Clip,
+        )
+        SlotLine(
+            font = latin,
+            text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit",
+            slot = 220.dp,
+            overflow = ShapedTextOverflow.Visible,
+        )
+        SlotLine(
+            font = latin,
+            text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit",
+            slot = 220.dp,
+            overflow = ShapedTextOverflow.Compress,
+        )
+    }
+}
+
+@Composable
+private fun SlotLine(
+    font: HbFont,
+    text: String,
+    slot: Dp,
+    alignment: ParagraphAlignment = ParagraphAlignment.Start,
+    justification: JustificationStrategy = JustificationStrategy.None,
+    overflow: ShapedTextOverflow = ShapedTextOverflow.Clip,
+) {
+    val slotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+    Box(
+        modifier = Modifier
+            .width(slot)
+            .height(40.dp)
+            .drawBehind {
+                drawRect(color = slotColor, style = Stroke(width = 1f))
+            },
+    ) {
+        ShapedText(
+            text = text,
+            font = font,
+            color = MaterialTheme.colorScheme.onBackground,
+            alignment = alignment,
+            justification = justification,
+            overflow = overflow,
         )
     }
 }

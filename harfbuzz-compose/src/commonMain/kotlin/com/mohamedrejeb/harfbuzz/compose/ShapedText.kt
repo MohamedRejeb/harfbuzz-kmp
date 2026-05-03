@@ -27,10 +27,9 @@ import kotlin.math.ceil
 /**
  * Render a single piece of text with one font, one color, one feature set.
  *
- * Single-line layout: the composable shapes [text] once and lays it out
- * within the parent's `maxWidth` constraint. Multi-line wrapping ships
- * later through `ShapedParagraphText`; here, [softWrap] / [maxLines]
- * are placeholders accepted for future API parity.
+ * Single-line composable: shapes [text] once and lays it out within the
+ * parent's `maxWidth` constraint. For multi-line wrapping use
+ * `ShapedParagraphText`.
  *
  * - [alignment] positions the line within the available width. Reuses
  *   [ParagraphAlignment] so single-line and paragraph call sites pick
@@ -52,9 +51,7 @@ public fun ShapedText(
     color: Color = Color.Unspecified,
     features: List<HbFeature> = emptyList(),
     direction: HbDirection = HbDirection.AUTO,
-    softWrap: Boolean = true,
     overflow: ShapedTextOverflow = ShapedTextOverflow.Clip,
-    maxLines: Int = Int.MAX_VALUE,
     alignment: ParagraphAlignment = ParagraphAlignment.Start,
     justification: JustificationStrategy = JustificationStrategy.None,
     /**
@@ -88,9 +85,7 @@ public fun ShapedText(
         color = color,
         features = features,
         direction = direction,
-        softWrap = softWrap,
         overflow = overflow,
-        maxLines = maxLines,
         alignment = alignment,
         justification = justification,
         forceForegroundColor = forceForegroundColor,
@@ -114,9 +109,7 @@ public fun ShapedText(
     color: Color = Color.Unspecified,
     features: List<HbFeature> = emptyList(),
     direction: HbDirection = HbDirection.AUTO,
-    softWrap: Boolean = true,
     overflow: ShapedTextOverflow = ShapedTextOverflow.Clip,
-    maxLines: Int = Int.MAX_VALUE,
     alignment: ParagraphAlignment = ParagraphAlignment.Start,
     justification: JustificationStrategy = JustificationStrategy.None,
     forceForegroundColor: Boolean = false,
@@ -169,8 +162,6 @@ public fun ShapedText(
             onTextLayout = onTextLayout,
         )
     }
-    @Suppress("UNUSED_VARIABLE")
-    val unused = listOf(softWrap, maxLines)  // multi-line wrapping ships via ShapedParagraphText
 }
 
 @Composable
