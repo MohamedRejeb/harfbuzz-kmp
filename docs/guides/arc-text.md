@@ -8,7 +8,7 @@ The `ArcText` composable lays out shaped text along a circular arc.
 @Composable
 fun BookmarkSeal(font: HbFont) {
     ArcText(
-        text = "بسم الله الرحمن الرحيم",
+        text = "نص عربي تجريبي للاختبار",
         font = font,
         radius = 120.dp,
         sweep = ArcSweep.Auto,

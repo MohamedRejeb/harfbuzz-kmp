@@ -2,7 +2,9 @@ package com.mohamedrejeb.harfbuzz.compose
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
@@ -14,6 +16,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.DrawStyle
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.translate
@@ -71,6 +74,47 @@ public fun DrawScope.drawShapedText(
         measured = measured,
         topLeft = topLeft,
         color = color,
+        brush = null,
+        alpha = alpha,
+        style = style,
+        blendMode = blendMode,
+        forceForegroundColor = forceForegroundColor,
+        shadow = shadow,
+        spacingScale = 1f,
+    )
+}
+
+/**
+ * Brush variant of [drawShapedText]: monochrome glyph silhouettes (and
+ * COLR v0 foreground-color layers) are filled / stroked with [brush]
+ * instead of a solid color. Designed-color glyphs - SVG-in-OT bitmaps,
+ * COLR v1 paint trees, and COLR v0 layers with palette colors - render
+ * unchanged so emoji and SVG-painted fonts (e.g. Aref Ruqaa Ink) keep
+ * their authored appearance.
+ *
+ * The brush is applied to a single combined path holding every monochrome
+ * glyph in the line, so a [Brush.linearGradient] spans the entire line
+ * rather than repeating per glyph.
+ *
+ * Pass [forceForegroundColor] = true to route color-font glyphs through
+ * the silhouette outline as well, making the brush paint every glyph
+ * (including emoji silhouettes).
+ */
+public fun DrawScope.drawShapedText(
+    measured: MeasuredText,
+    brush: Brush,
+    topLeft: Offset = Offset.Zero,
+    alpha: Float = 1f,
+    style: DrawStyle = Fill,
+    blendMode: BlendMode = DrawScope.DefaultBlendMode,
+    forceForegroundColor: Boolean = false,
+    shadow: Shadow? = null,
+) {
+    drawShapedTextInternal(
+        measured = measured,
+        topLeft = topLeft,
+        color = Color.Black,
+        brush = brush,
         alpha = alpha,
         style = style,
         blendMode = blendMode,
@@ -109,6 +153,129 @@ public fun DrawScope.drawShapedText(
     blendMode: BlendMode = DrawScope.DefaultBlendMode,
     forceForegroundColor: Boolean = false,
     shadow: Shadow? = null,
+) {
+    drawShapedTextLayoutAware(
+        measured = measured,
+        availableWidth = availableWidth,
+        alignment = alignment,
+        direction = direction,
+        overflow = overflow,
+        topLeft = topLeft,
+        color = color,
+        brush = null,
+        alpha = alpha,
+        style = style,
+        blendMode = blendMode,
+        forceForegroundColor = forceForegroundColor,
+        shadow = shadow,
+    )
+}
+
+/**
+ * Layout-aware brush variant. Same alignment / overflow handling as the
+ * color overload, but [brush] paints monochrome glyphs and COLR v0
+ * foreground-color layers; designed-color glyphs (SVG-in-OT, COLR v1,
+ * COLR v0 palette layers) render unchanged unless [forceForegroundColor]
+ * is true.
+ *
+ * The brush spans the line's combined silhouette path, so a
+ * [Brush.linearGradient] flows from the line's leading edge to its
+ * trailing edge regardless of [alignment].
+ */
+public fun DrawScope.drawShapedText(
+    measured: MeasuredText,
+    availableWidth: Float,
+    brush: Brush,
+    alignment: ParagraphAlignment = ParagraphAlignment.Start,
+    direction: HbDirection = measured.paragraph.baseDirection,
+    overflow: ShapedTextOverflow = ShapedTextOverflow.Clip,
+    topLeft: Offset = Offset.Zero,
+    alpha: Float = 1f,
+    style: DrawStyle = Fill,
+    blendMode: BlendMode = DrawScope.DefaultBlendMode,
+    forceForegroundColor: Boolean = false,
+    shadow: Shadow? = null,
+) {
+    drawShapedTextLayoutAware(
+        measured = measured,
+        availableWidth = availableWidth,
+        alignment = alignment,
+        direction = direction,
+        overflow = overflow,
+        topLeft = topLeft,
+        color = Color.Black,
+        brush = brush,
+        alpha = alpha,
+        style = style,
+        blendMode = blendMode,
+        forceForegroundColor = forceForegroundColor,
+        shadow = shadow,
+    )
+}
+
+/**
+ * Mask an [image] through the line's silhouette so it paints only
+ * inside glyph ink. The clip uses [MeasuredText.silhouettePath] (cached
+ * once on first call) translated by [topLeft], and the image draw
+ * inherits the slot's antialiasing.
+ *
+ * Default [dstOffset] / [dstSize] place the image at [topLeft] at its
+ * natural pixel size; pass an explicit [dstSize] to stretch the image
+ * across the line's bounds (e.g.
+ * `dstSize = IntSize(measured.advance.toInt(), measured.lineHeight.toInt())`).
+ *
+ * Glyphs without a base outline silhouette - notably Noto Color Emoji's
+ * COLR v1 paint trees - contribute no clip area, so they appear as
+ * gaps in the masked image. Use [drawShapedText] without the image
+ * fill if you want emoji to render with their authored colors.
+ */
+public fun DrawScope.drawShapedTextWithImageFill(
+    measured: MeasuredText,
+    image: ImageBitmap,
+    topLeft: Offset = Offset.Zero,
+    dstOffset: IntOffset = IntOffset(topLeft.x.toInt(), topLeft.y.toInt()),
+    dstSize: IntSize = IntSize(image.width, image.height),
+    srcOffset: IntOffset = IntOffset.Zero,
+    srcSize: IntSize = IntSize(image.width, image.height),
+    alpha: Float = 1f,
+    blendMode: BlendMode = DrawScope.DefaultBlendMode,
+    filterQuality: FilterQuality = FilterQuality.High,
+) {
+    if (measured.isEmpty) return
+    val silhouette = measured.silhouettePath
+    val translated = if (topLeft == Offset.Zero) {
+        silhouette
+    } else {
+        Path().also { it.addPath(silhouette, topLeft) }
+    }
+    clipPath(translated) {
+        drawImage(
+            image = image,
+            srcOffset = srcOffset,
+            srcSize = srcSize,
+            dstOffset = dstOffset,
+            dstSize = dstSize,
+            alpha = alpha,
+            blendMode = blendMode,
+            filterQuality = filterQuality,
+        )
+    }
+}
+
+private fun DrawScope.drawShapedTextLayoutAware(
+    measured: MeasuredText,
+    availableWidth: Float,
+    alignment: ParagraphAlignment,
+    direction: HbDirection,
+    overflow: ShapedTextOverflow,
+    topLeft: Offset,
+    color: Color,
+    brush: Brush?,
+    alpha: Float,
+    style: DrawStyle,
+    blendMode: BlendMode,
+    forceForegroundColor: Boolean,
+    shadow: Shadow?,
 ) {
     if (measured.isEmpty) return
     // The natural extent of a line is whichever is larger between the
@@ -157,6 +324,7 @@ public fun DrawScope.drawShapedText(
             measured = measured,
             topLeft = penTopLeft,
             color = color,
+            brush = brush,
             alpha = alpha,
             style = style,
             blendMode = blendMode,
@@ -176,6 +344,7 @@ public fun DrawScope.drawShapedText(
             measured = measured,
             topLeft = penTopLeft,
             color = color,
+            brush = brush,
             alpha = alpha,
             style = style,
             blendMode = blendMode,
@@ -252,16 +421,27 @@ private fun computeAlignmentOffset(
     }
 }
 
-private fun DrawScope.drawShapedTextInternal(
+internal fun DrawScope.drawShapedTextInternal(
     measured: MeasuredText,
     topLeft: Offset,
     color: Color,
+    brush: Brush?,
     alpha: Float,
     style: DrawStyle,
     blendMode: BlendMode,
     forceForegroundColor: Boolean,
     shadow: Shadow?,
     spacingScale: Float,
+    /**
+     * Caller-provided accumulator for monochrome silhouettes. When
+     * non-null, the per-glyph silhouette is appended here and the
+     * final brush draw is the caller's responsibility (paragraph mode
+     * walks every line into the same path so a gradient spans the
+     * whole paragraph instead of repeating per line). When null, this
+     * function allocates its own path and paints it at the end -
+     * matching the standalone single-line draw behaviour.
+     */
+    externalBrushPath: Path? = null,
 ) {
     if (measured.isEmpty) return
 
@@ -281,6 +461,15 @@ private fun DrawScope.drawShapedTextInternal(
             spacingScale = spacingScale,
         )
     }
+
+    // Brush mode accumulates monochrome silhouettes (and COLR v0
+    // foreground-color layers) into a single path so the brush spans
+    // the whole line - drawing each glyph individually would map a
+    // gradient to per-glyph bounds, repeating it. Color glyphs (SVG,
+    // COLR v1, COLR v0 palette) still render in place with their
+    // designed colors so emoji and SVG fonts paint unchanged.
+    val ownsBrushPath = externalBrushPath == null
+    val combinedBrushPath = externalBrushPath ?: if (brush != null) Path() else null
 
     var loopX = penX
     var loopY = penY
@@ -313,16 +502,31 @@ private fun DrawScope.drawShapedTextInternal(
             val drawX = localX + pos.xOffset
             val drawY = localY - pos.yOffset
 
-            translate(left = drawX, top = drawY) {
-                drawOneGlyphAtOrigin(
+            if (combinedBrushPath != null) {
+                drawOneGlyphForBrush(
                     runFont = runFont,
                     caches = caches,
                     glyphId = gid,
+                    drawX = drawX,
+                    drawY = drawY,
                     color = color,
                     alpha = alpha,
                     style = style,
                     blendMode = blendMode,
+                    combinedPath = combinedBrushPath,
                 )
+            } else {
+                translate(left = drawX, top = drawY) {
+                    drawOneGlyphAtOrigin(
+                        runFont = runFont,
+                        caches = caches,
+                        glyphId = gid,
+                        color = color,
+                        alpha = alpha,
+                        style = style,
+                        blendMode = blendMode,
+                    )
+                }
             }
 
             localX += pos.xAdvance * spacingScale
@@ -330,6 +534,50 @@ private fun DrawScope.drawShapedTextInternal(
         }
         loopX = localX
         loopY = localY
+    }
+
+    if (ownsBrushPath && combinedBrushPath != null && brush != null) {
+        drawCombinedBrushPath(
+            path = combinedBrushPath,
+            brush = brush,
+            alpha = alpha,
+            style = style,
+            blendMode = blendMode,
+        )
+    }
+}
+
+/**
+ * Draw [path] under [brush] with the brush sized to the path's bounding
+ * box. Bypasses [DrawScope.drawPath]'s default sizing (which uses
+ * [DrawScope.size]) - inside `Modifier.drawBehind` the inner element
+ * may report a size of zero (an empty Box used as a paint surface),
+ * which collapses [Brush.horizontalGradient] / etc. into a degenerate
+ * shader. Translating the path to the origin and the canvas back keeps
+ * the painted pixels where they were while letting the shader's
+ * reference frame line up with the line's leading edge.
+ */
+internal fun DrawScope.drawCombinedBrushPath(
+    path: Path,
+    brush: Brush,
+    alpha: Float,
+    style: DrawStyle,
+    blendMode: BlendMode,
+) {
+    val bounds = path.getBounds()
+    if (bounds.isEmpty) return
+    path.translate(Offset(-bounds.left, -bounds.top))
+    drawIntoCanvas { canvas ->
+        canvas.save()
+        val paint = Paint().apply {
+            this.alpha = alpha
+            this.blendMode = blendMode
+            applyDrawStyleToPaint(this, style)
+        }
+        brush.applyTo(Size(bounds.width, bounds.height), paint, alpha)
+        canvas.translate(bounds.left, bounds.top)
+        canvas.drawPath(path, paint)
+        canvas.restore()
     }
 }
 
@@ -463,6 +711,86 @@ internal fun DrawScope.drawOneGlyphAtOrigin(
                 style = style,
                 blendMode = blendMode,
             )
+        }
+    }
+}
+
+/**
+ * Brush-aware counterpart of [drawOneGlyphAtOrigin]: route the glyph
+ * through the same 5-strategy ladder, but instead of drawing the
+ * monochrome silhouette in place, append it (translated to the glyph's
+ * pen origin) to [combinedPath] so the brush draw pass at the end of
+ * [drawShapedTextInternal] paints every silhouette under one shader.
+ *
+ * Designed-color paths - SVG bitmaps, COLR v1 paint trees, and COLR v0
+ * palette layers - bypass the combined path entirely and render in
+ * place at `(drawX, drawY)` with their authored colors. COLR v0
+ * foreground-color layers (where `layer.argb == null`) join the
+ * combined silhouette so the brush tints them like any other monochrome
+ * glyph.
+ */
+private fun DrawScope.drawOneGlyphForBrush(
+    runFont: HbFont,
+    caches: RunGlyphCaches,
+    glyphId: Int,
+    drawX: Float,
+    drawY: Float,
+    color: Color,
+    alpha: Float,
+    style: DrawStyle,
+    blendMode: BlendMode,
+    combinedPath: Path,
+) {
+    val svgRender = if (caches.useSvg) caches.svgCache?.get(glyphId) else null
+    val paintTree = if (svgRender == null && caches.useV1Paint) {
+        caches.paintTrees?.get(glyphId)
+    } else null
+    val v0Layers = if (svgRender == null && paintTree == null && caches.useV0Layers) {
+        caches.colorLayers?.get(glyphId)
+    } else null
+
+    if (svgRender != null) {
+        translate(left = drawX, top = drawY) {
+            drawSvgGlyphBitmap(
+                render = svgRender,
+                pointSize = runFont.pointSize,
+                upem = runFont.face.upem,
+                alpha = alpha,
+                blendMode = blendMode,
+            )
+        }
+    } else if (paintTree != null && paintTree.isNotEmpty()) {
+        translate(left = drawX, top = drawY) {
+            drawV1PaintTree(
+                rawPaths = caches.rawPaths,
+                ops = paintTree,
+                color = color,
+                alpha = alpha,
+                blendMode = blendMode,
+            )
+        }
+    } else if (v0Layers != null && v0Layers.isNotEmpty()) {
+        for (layer in v0Layers) {
+            val layerPath = caches.flippedPaths[layer.glyphId] ?: continue
+            val layerArgb = layer.argb
+            if (layerArgb != null) {
+                translate(left = drawX, top = drawY) {
+                    drawPath(
+                        path = layerPath,
+                        color = Color(layerArgb.toLong() and 0xFFFFFFFFL),
+                        alpha = alpha,
+                        style = style,
+                        blendMode = blendMode,
+                    )
+                }
+            } else {
+                combinedPath.addPath(layerPath, Offset(drawX, drawY))
+            }
+        }
+    } else {
+        val path = caches.flippedPaths[glyphId]
+        if (path != null) {
+            combinedPath.addPath(path, Offset(drawX, drawY))
         }
     }
 }

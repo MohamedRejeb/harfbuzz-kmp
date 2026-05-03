@@ -32,7 +32,7 @@ To force the monochrome path explicitly:
 
 ```kotlin
 ShapedText(
-    text = "بسم الله الرحمن الرحيم",
+    text = "نص عربي تجريبي للاختبار",
     font = arefRuqaaInk,
     color = Color(0xFFB00020),
     forceForegroundColor = true,    // bypass every color table

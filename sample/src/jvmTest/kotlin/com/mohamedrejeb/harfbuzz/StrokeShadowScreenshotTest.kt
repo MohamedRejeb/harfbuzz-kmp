@@ -99,7 +99,7 @@ class StrokeShadowScreenshotTest {
         rule.captureGolden("stroke_arabic_naskh_2px.png") {
             Stage {
                 ShapedText(
-                    text = "السلام عليكم",
+                    text = "نص عربي",
                     font = font,
                     color = Color.Black,
                     style = Stroke(width = 2f),
@@ -115,7 +115,7 @@ class StrokeShadowScreenshotTest {
         rule.captureGolden("stroke_aref_ruqaa_ink_outline.png") {
             Stage {
                 ShapedText(
-                    text = "بسم الله الرحمن الرحيم",
+                    text = "نص عربي تجريبي للاختبار",
                     font = font,
                     color = Color(0xFFB00020),
                     style = Stroke(width = 2f),
@@ -131,7 +131,7 @@ class StrokeShadowScreenshotTest {
         rule.captureGolden("stroke_emoji_outline.png") {
             Stage {
                 ShapedText(
-                    text = "😀🌍🎉🌈",
+                    text = "😀🌍🎉⭐",
                     font = font,
                     color = Color(0xFF263238),
                     style = Stroke(width = 2f),
@@ -167,7 +167,7 @@ class StrokeShadowScreenshotTest {
         rule.captureGolden("shadow_arabic_naskh_offset_blur.png") {
             Stage {
                 ShapedText(
-                    text = "السلام عليكم",
+                    text = "نص عربي",
                     font = font,
                     color = Color.Black,
                     shadow = Shadow(
@@ -227,7 +227,7 @@ class StrokeShadowScreenshotTest {
         rule.captureGolden("shadow_aref_ruqaa_ink_silhouette.png") {
             Stage {
                 ShapedText(
-                    text = "بسم الله",
+                    text = "نص عربي",
                     font = font,
                     color = Color(0xFFB00020),
                     shadow = Shadow(
@@ -358,7 +358,7 @@ class StrokeShadowScreenshotTest {
             Stage {
                 Box(modifier = Modifier.fillMaxWidth().height(80.dp)) {
                     ShapedText(
-                        text = "السلام عليكم",
+                        text = "نص عربي",
                         font = font,
                         color = Color(0xFF1B5E20),
                         style = Stroke(width = 4f),
@@ -370,7 +370,7 @@ class StrokeShadowScreenshotTest {
                         modifier = Modifier.fillMaxWidth().height(80.dp),
                     )
                     ShapedText(
-                        text = "السلام عليكم",
+                        text = "نص عربي",
                         font = font,
                         color = Color(0xFFFFD54F),
                         modifier = Modifier.fillMaxWidth().height(80.dp),

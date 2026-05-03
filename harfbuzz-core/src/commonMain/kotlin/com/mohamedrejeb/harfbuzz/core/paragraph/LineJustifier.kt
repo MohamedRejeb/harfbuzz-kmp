@@ -1,15 +1,36 @@
 package com.mohamedrejeb.harfbuzz.core.paragraph
 
 /**
+ * Result of justifying one line. [justifiedText] is the line text after
+ * inserting connectors (Kashida / thin-space) - or the original `text`
+ * unchanged when nothing was inserted. [originalToJustifiedIndex] is the
+ * per-character mapping from the original line text into [justifiedText];
+ * `null` means identity (no insertions happened) so callers can skip the
+ * indirection without paying for an `IntArray(n) { it }` allocation on
+ * every un-justified line.
+ *
+ * When non-null, [originalToJustifiedIndex].size equals the original
+ * line's length and each entry is the position of that character in
+ * [justifiedText]. The mapping is monotonically increasing, so callers
+ * can binary-search it to translate a justified-side index back to the
+ * original-side cluster origin.
+ */
+public class LineJustificationResult internal constructor(
+    public val justifiedText: String,
+    public val originalToJustifiedIndex: IntArray?,
+)
+
+/**
  * Strategy dispatch for justifying one already-shaped line. Wraps the
  * [WordSpacingJustifier] / [KashidaJustifier] decision in a single entry
  * point so callers (single-line `ShapedText`, paragraph layout) do not
  * each repeat the same `when (strategy)` ladder.
  *
- * Returns [text] unchanged for [JustificationStrategy.None] and for the
- * usual identity bail-outs (target below current, zero glyph widths,
- * empty insertion sets) so the caller can safely re-shape only when the
- * returned string actually differs from the input.
+ * Returns an identity result (text unchanged, mapping null) for
+ * [JustificationStrategy.None] and for the usual identity bail-outs
+ * (target below current, zero glyph widths, empty insertion sets) so
+ * the caller can safely re-shape only when [LineJustificationResult.justifiedText]
+ * differs from the input.
  */
 public object LineJustifier {
 
@@ -34,28 +55,52 @@ public object LineJustifier {
         targetWidth: Float,
         kashidaGlyphWidth: Float,
         thinSpaceWidth: Float,
-    ): String = when (strategy) {
-        JustificationStrategy.None -> text
-        JustificationStrategy.WordSpacing -> WordSpacingJustifier.justifyLine(
-            text = text,
-            currentWidth = currentWidth,
-            targetWidth = targetWidth,
-            thinSpaceWidth = thinSpaceWidth,
-        ).justifiedText
-        JustificationStrategy.Mixed -> if (ArabicTextUtils.isArabicText(text)) {
-            KashidaJustifier.justifyArabicLine(
-                text = text,
-                currentWidth = currentWidth,
-                targetWidth = targetWidth,
-                kashidaGlyphWidth = kashidaGlyphWidth,
-            ).justifiedText
-        } else {
-            WordSpacingJustifier.justifyLine(
+    ): LineJustificationResult = when (strategy) {
+        JustificationStrategy.None -> identityResult(text)
+        JustificationStrategy.WordSpacing -> {
+            val r = WordSpacingJustifier.justifyLine(
                 text = text,
                 currentWidth = currentWidth,
                 targetWidth = targetWidth,
                 thinSpaceWidth = thinSpaceWidth,
-            ).justifiedText
+            )
+            buildResult(text, r.justifiedText, r.originalToJustifiedIndex)
+        }
+        JustificationStrategy.Mixed -> if (ArabicTextUtils.isArabicText(text)) {
+            val r = KashidaJustifier.justifyArabicLine(
+                text = text,
+                currentWidth = currentWidth,
+                targetWidth = targetWidth,
+                kashidaGlyphWidth = kashidaGlyphWidth,
+            )
+            buildResult(text, r.justifiedText, r.originalToJustifiedIndex)
+        } else {
+            val r = WordSpacingJustifier.justifyLine(
+                text = text,
+                currentWidth = currentWidth,
+                targetWidth = targetWidth,
+                thinSpaceWidth = thinSpaceWidth,
+            )
+            buildResult(text, r.justifiedText, r.originalToJustifiedIndex)
         }
     }
+
+    /**
+     * Collapse the underlying justifier's identity case (length
+     * unchanged) into a null-mapping [LineJustificationResult] so
+     * downstream callers can short-circuit on `mapping == null` and
+     * skip the per-char indirection on every un-changed line. The
+     * underlying justifiers always insert and never remove, so an
+     * unchanged length means no characters were added.
+     */
+    private fun buildResult(
+        originalText: String,
+        justifiedText: String,
+        mapping: IntArray,
+    ): LineJustificationResult =
+        if (justifiedText.length == originalText.length) identityResult(originalText)
+        else LineJustificationResult(justifiedText, mapping)
+
+    private fun identityResult(text: String): LineJustificationResult =
+        LineJustificationResult(text, null)
 }

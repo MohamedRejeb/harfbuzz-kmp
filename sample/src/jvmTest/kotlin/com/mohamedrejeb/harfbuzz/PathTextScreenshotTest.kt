@@ -220,7 +220,7 @@ class PathTextScreenshotTest {
         rule.captureGolden("path_text_arabic_compress_extreme.png") {
             Stage(width = 220, height = 80) {
                 TextOnPath(
-                    text = "السلام عليكم صديقي",
+                    text = "نص عربي تجريبي للقراءة",
                     font = font,
                     path = Path().apply {
                         moveTo(20f, 50f)
@@ -240,7 +240,7 @@ class PathTextScreenshotTest {
         rule.captureGolden("path_text_arabic_compressed_arc.png") {
             Stage(width = 280, height = 200) {
                 TextOnPath(
-                    text = "بسم الله الرحمن الرحيم",
+                    text = "نص عربي تجريبي للاختبار",
                     font = font,
                     path = Path().apply {
                         addArc(Rect(60f, 40f, 220f, 200f), 180f, 180f)

@@ -8,12 +8,13 @@ and this library exposes that to your KMP/Compose code.
 ## What you get for free
 
 - **Cursive joining** (initial / medial / final / isolated forms).
-- **Standard ligatures**: `لا` → LAM_ALEF, `الله`, `بسم`.
+- **Standard ligatures**: `لا` → LAM_ALEF and any other ligation rules
+  the font's `liga`, `rlig`, and `dlig` lookups expose.
 - **Tashkeel positioning**: fatha, kasra, damma, sukun, shadda combine
   correctly above/below the appropriate base letters.
 - **Bidi handling**: mixed Arabic + Latin + numbers laid out in the correct
   visual order via the pure-Kotlin UAX#9 resolver in `harfbuzz-core`.
-- **Quranic-style OT features**: any feature your font advertises (`ss01`,
+- **Stylistic OT features**: any feature your font advertises (`ss01`,
   `liga`, `calt`, `rlig`, `init/medi/fina/isol`) can be toggled per shape
   call.
 - **Arabic-Indic vs European digits**: digits keep their Bidi_Class (AN vs
@@ -81,7 +82,7 @@ cases at run boundaries in mixed RTL/LTR text need the directional level
 The Arabic correctness criteria from the design spec are tested in
 [`harfbuzz-core/src/jvmTest/.../ArabicCorrectnessTest.kt`](../../harfbuzz-core/src/jvmTest/kotlin/com/mohamedrejeb/harfbuzz/core/ArabicCorrectnessTest.kt):
 
-- Bismillah shapes as a single RTL run with positive advance.
+- A multi-word Arabic sample shapes as a single RTL run with positive advance.
 - Lam-alef collapses to a single ligated glyph.
 - Tashkeel marks attach as positioned glyphs (not their own runs).
 - Mixed Latin/Arabic paragraphs split into multiple runs in correct visual

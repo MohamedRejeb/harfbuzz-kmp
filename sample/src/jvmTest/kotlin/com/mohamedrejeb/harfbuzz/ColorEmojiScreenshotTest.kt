@@ -119,8 +119,9 @@ class ColorEmojiScreenshotTest {
 
     /**
      * Nature and weather - mixes of radial gradients (sun/moon) and
-     * complex multi-region fills (clouds, rainbow). Rainbow alone has
-     * seven distinct color bands clipped to a curved arc.
+     * complex multi-region fills (clouds, snowflake). Each glyph stresses
+     * a different paint-tree shape: radial fills, layered overlays, and
+     * fine line work.
      */
     @Test
     fun `emoji nature renders with radial gradients and multi region`() {
@@ -128,7 +129,7 @@ class ColorEmojiScreenshotTest {
         rule.captureGolden("emoji_nature.png") {
             Stage {
                 ShapedText(
-                    text = "☀️🌙⭐🔥🌈☁️",
+                    text = "☀️🌙⭐🔥❄️☁️",
                     font = font,
                     modifier = Modifier.fillMaxWidth().height(96.dp),
                 )

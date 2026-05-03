@@ -61,11 +61,13 @@ class LineBreakerJvmTest {
 
     @Test
     fun arabic_with_space_emits_break_after_space() {
-        // "السلام عليكم" (12 chars in UTF-16). A break must exist at
-        // index 7 (after the space at index 6).
-        val text = "السلام عليكم"
+        // "نص عربي للاختبار" (16 chars in UTF-16). A break must exist
+        // at index 3 (after the first space at index 2) and index 8
+        // (after the second space at index 7).
+        val text = "نص عربي للاختبار"
         val breaks = lineBreakOpportunities(text)
-        assertTrue(7 in breaks.toList(), "missing break after Arabic space in ${breaks.toList()}")
+        assertTrue(3 in breaks.toList(), "missing break after first Arabic space in ${breaks.toList()}")
+        assertTrue(8 in breaks.toList(), "missing break after second Arabic space in ${breaks.toList()}")
     }
 
     @Test

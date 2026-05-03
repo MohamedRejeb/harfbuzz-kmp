@@ -16,9 +16,10 @@ text-shaping library, packaged as two first-class artifacts:
 ## Why
 
 Compose's built-in text stack has known limitations rendering Arabic - cursive
-joining, tashkeel positioning, ligatures (`لا`, `الله`, `بسم`), bidi mixing
-with Latin/digits, OpenType feature control. It also can't render **color
-fonts** at all on most targets - no emoji, no inked Arabic, no flag glyphs.
+joining, tashkeel positioning, ligatures (`لا` LAM-ALEF, joined letterforms,
+mark stacks), bidi mixing with Latin/digits, OpenType feature control. It
+also can't render **color fonts** at all on most targets - no emoji, no
+inked Arabic, no flag glyphs.
 This library exposes HarfBuzz directly to KMP/Compose so:
 
 - Arabic renders correctly out of the box.
@@ -60,7 +61,7 @@ fun ArabicSample() {
         FontLoad.Loading   -> CircularProgressIndicator()
         is FontLoad.Failed -> Text("Failed: ${s.cause.message}")
         is FontLoad.Ready  -> ShapedText(
-            text = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+            text = "نَصٌّ عَرَبِيٌّ مُشَكَّلٌ لِلْاِخْتِبَارِ",
             font = s.font,
             features = listOf(HbFeature("liga"), HbFeature("calt"), HbFeature("rlig")),
         )
@@ -76,7 +77,7 @@ val state by rememberHbFont(
     sizePx = 64f,
 )
 (state as? FontLoad.Ready)?.let {
-    ShapedText("😀🌍🎉🌈", font = it.font)
+    ShapedText("😀🌍🎉⭐", font = it.font)
 }
 ```
 
@@ -100,7 +101,7 @@ chooses.
 
 ```kotlin
 ArcText(
-    text = "بسم الله الرحمن الرحيم",
+    text = "نص عربي تجريبي للاختبار",
     font = arabicFont,
     radius = 120.dp,
     sweep = ArcSweep.Auto,

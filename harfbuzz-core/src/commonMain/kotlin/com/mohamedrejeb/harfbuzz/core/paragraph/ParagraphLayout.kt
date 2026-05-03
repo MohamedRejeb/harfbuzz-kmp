@@ -63,7 +63,16 @@ public suspend fun HbFontStack.layoutParagraph(
             features = features,
             language = language,
         )
-        rawLines.add(RawLine(cursor, pick.end, pick.shape, pick.shapedText, pick.endedByHardBreak))
+        rawLines.add(
+            RawLine(
+                start = cursor,
+                end = pick.end,
+                shape = pick.shape,
+                shapedText = pick.shapedText,
+                endedByHardBreak = pick.endedByHardBreak,
+                justifyMapping = null,
+            ),
+        )
         cursor = pick.end
         bIdx = pick.nextProbeIdx
     }
@@ -110,6 +119,7 @@ public suspend fun HbFontStack.layoutParagraph(
                 advance = advance,
                 ink = lineInk,
                 logical = raw.shape.logical,
+                originalToJustifiedIndex = raw.justifyMapping,
             ),
         )
         y += singleLineHeight + lineSpacing
@@ -268,6 +278,7 @@ private data class RawLine(
     val shape: ShapedParagraph,
     val shapedText: String,
     val endedByHardBreak: Boolean,
+    val justifyMapping: IntArray?,
 )
 
 private data class LinePick(
@@ -325,7 +336,7 @@ private suspend fun HbFontStack.applyJustification(
         val lineText = text.substring(raw.start, raw.end).trimEndForLineBreak()
         if (lineText.isEmpty()) continue
 
-        val justifiedText = LineJustifier.justify(
+        val justified = LineJustifier.justify(
             text = lineText,
             strategy = justification,
             currentWidth = current,
@@ -334,9 +345,13 @@ private suspend fun HbFontStack.applyJustification(
             thinSpaceWidth = thinSpaceWidth,
         )
 
-        if (justifiedText.length != lineText.length) {
-            val newShape = shapeParagraph(justifiedText, baseDirection, features, language)
-            rawLines[i] = raw.copy(shape = newShape, shapedText = justifiedText)
+        if (justified.justifiedText.length != lineText.length) {
+            val newShape = shapeParagraph(justified.justifiedText, baseDirection, features, language)
+            rawLines[i] = raw.copy(
+                shape = newShape,
+                shapedText = justified.justifiedText,
+                justifyMapping = justified.originalToJustifiedIndex,
+            )
         }
     }
 }

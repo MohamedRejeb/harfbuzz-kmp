@@ -22,19 +22,19 @@ class ArabicCorrectnessTest {
     ).firstOrNull { File(it).exists() }?.let { File(it).readBytes() }
 
     @Test
-    fun `bismillah shapes as RTL run with positive advance`() = runBlocking {
+    fun `arabic sample shapes as RTL run with positive advance`() = runBlocking {
         val bytes = loadArabicFont() ?: return@runBlocking
         HbFace.from { bytes(bytes) }.use { face ->
             face.toFont(32f).use { font ->
                 HbBuffer().use { buf ->
-                    buf.text = "بسم الله الرحمن الرحيم"
+                    buf.text = "نص عربي تجريبي للاختبار"
                     buf.direction = HbDirection.RTL
                     buf.script = HbScript.ARABIC
                     buf.language = HbLanguage.ARABIC
                     val run = font.shape(buf)
 
-                    assertTrue(run.glyphs.isNotEmpty(), "bismillah should produce glyphs")
-                    assertTrue(run.totalAdvance > 0f, "bismillah totalAdvance should be > 0")
+                    assertTrue(run.glyphs.isNotEmpty(), "Arabic sample should produce glyphs")
+                    assertTrue(run.totalAdvance > 0f, "Arabic sample totalAdvance should be > 0")
                     assertEquals(HbDirection.RTL, run.direction)
                     // No .notdef glyphs for a Naskh font with these characters.
                     assertTrue(
@@ -136,13 +136,13 @@ class ArabicCorrectnessTest {
         HbFace.from { bytes(bytes) }.use { face ->
             face.toFont(24f).use { font ->
                 val arabicFirst = font.shapeParagraph(
-                    text = "السلام Hello",
+                    text = "نص Hello",
                     baseDirection = HbDirection.AUTO,
                 )
                 assertEquals(HbDirection.RTL, arabicFirst.baseDirection)
 
                 val latinFirst = font.shapeParagraph(
-                    text = "Hello السلام",
+                    text = "Hello نص",
                     baseDirection = HbDirection.AUTO,
                 )
                 assertEquals(HbDirection.LTR, latinFirst.baseDirection)
@@ -162,7 +162,7 @@ class ArabicCorrectnessTest {
         val bytes = loadArabicFont() ?: return@runBlocking
         HbFace.from { bytes(bytes) }.use { face ->
             face.toFont(32f).use { font ->
-                val text = "بسم الله الرحمن الرحيم"
+                val text = "نص عربي تجريبي للاختبار"
 
                 val viaParagraph = font.shapeParagraph(
                     text = text,

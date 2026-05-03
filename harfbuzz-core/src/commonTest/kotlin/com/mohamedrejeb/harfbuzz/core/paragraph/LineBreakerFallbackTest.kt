@@ -61,11 +61,11 @@ class LineBreakerFallbackTest {
 
     @Test
     fun arabic_with_spaces_breaks_after_each_word() {
-        // "السلام عليكم" - one break after the space.
-        val text = "السلام عليكم"
+        // "نص عربي" - one break after the space at index 2 (length 7).
+        val text = "نص عربي"
         val breaks = lineBreakOpportunitiesFallback(text)
-        // Codepoint 0..6 is the first word + space; break at 7, end at 12.
-        assertContentEquals(intArrayOf(0, 7, 12), breaks)
+        // Codepoint 0..1 is the first word + space; break at 3, end at 7.
+        assertContentEquals(intArrayOf(0, 3, 7), breaks)
     }
 
     @Test

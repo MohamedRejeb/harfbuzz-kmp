@@ -86,4 +86,17 @@ public data class LineLayout(
     public val advance: Float,
     public val ink: HbRect,
     public val logical: HbRect,
+    /**
+     * Per-character mapping from the trimmed source line into [text]
+     * after justification: index `i` of the original (trimmed) line
+     * lands at position `originalToJustifiedIndex[i]` of the justified
+     * [text]. `null` means identity - no insertions happened on this
+     * line, so the original-side indices already match the shaped
+     * indices and callers can skip the indirection without paying for
+     * an `IntArray(n) { it }` allocation. When non-null,
+     * `originalToJustifiedIndex.size` is the trimmed source line
+     * length (which can be shorter than [charRange] when trailing
+     * whitespace / hard-break characters were stripped before shaping).
+     */
+    public val originalToJustifiedIndex: IntArray? = null,
 )

@@ -7,6 +7,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.DrawStyle
@@ -40,6 +41,19 @@ public fun ShapedParagraphText(
     font: HbFont,
     modifier: Modifier = Modifier,
     color: Color = Color.Unspecified,
+    /**
+     * Optional [Brush] (e.g. [Brush.linearGradient]) that paints
+     * monochrome glyph silhouettes and COLR v0 foreground-color layers.
+     * When non-null this takes precedence over [color] for those glyphs;
+     * SVG-in-OT bitmaps and COLR v1 paint trees and COLR v0 palette
+     * layers continue to render with their font-designed colors so
+     * emoji and SVG-painted fonts keep their authored appearance. The
+     * brush spans the paragraph's combined silhouette path, so a
+     * gradient flows from the first line's leading edge through every
+     * wrapped line to the last line's trailing edge rather than
+     * repeating per-line.
+     */
+    brush: Brush? = null,
     alignment: ParagraphAlignment = ParagraphAlignment.Start,
     direction: HbDirection = HbDirection.AUTO,
     features: List<HbFeature> = emptyList(),
@@ -58,6 +72,7 @@ public fun ShapedParagraphText(
         fontStack = stack,
         modifier = modifier,
         color = color,
+        brush = brush,
         alignment = alignment,
         direction = direction,
         features = features,
@@ -83,6 +98,7 @@ public fun ShapedParagraphText(
     fontStack: HbFontStack,
     modifier: Modifier = Modifier,
     color: Color = Color.Unspecified,
+    brush: Brush? = null,
     alignment: ParagraphAlignment = ParagraphAlignment.Start,
     direction: HbDirection = HbDirection.AUTO,
     features: List<HbFeature> = emptyList(),
@@ -130,13 +146,23 @@ public fun ShapedParagraphText(
                 }
                 .drawBehind {
                     if (measured != null) {
-                        drawShapedParagraph(
-                            paragraph = measured,
-                            color = resolvedColor,
-                            style = style,
-                            forceForegroundColor = forceForegroundColor,
-                            shadow = shadow,
-                        )
+                        if (brush != null) {
+                            drawShapedParagraph(
+                                paragraph = measured,
+                                brush = brush,
+                                style = style,
+                                forceForegroundColor = forceForegroundColor,
+                                shadow = shadow,
+                            )
+                        } else {
+                            drawShapedParagraph(
+                                paragraph = measured,
+                                color = resolvedColor,
+                                style = style,
+                                forceForegroundColor = forceForegroundColor,
+                                shadow = shadow,
+                            )
+                        }
                     }
                 },
             content = {},

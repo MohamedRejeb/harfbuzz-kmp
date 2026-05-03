@@ -49,7 +49,7 @@ class KashidaJustifierTest {
 
     @Test
     fun identity_when_target_below_current() {
-        val text = "بسم الله"
+        val text = "نص عربي"
         val r = KashidaJustifier.justifyArabicLine(text, 200f, 100f, 10f)
         assertEquals(text, r.justifiedText)
         assertContentEquals(IntArray(text.length) { it }, r.originalToJustifiedIndex)
@@ -64,7 +64,7 @@ class KashidaJustifierTest {
 
     @Test
     fun identity_when_kashida_width_non_positive() {
-        val text = "بسم الله"
+        val text = "نص عربي"
         assertEquals(text, KashidaJustifier.justifyArabicLine(text, 100f, 200f, 0f).justifiedText)
         assertEquals(text, KashidaJustifier.justifyArabicLine(text, 100f, 200f, -5f).justifiedText)
     }
@@ -111,7 +111,7 @@ class KashidaJustifierTest {
 
     @Test
     fun preserves_original_chars_in_order() {
-        val text = "بسم الله الرحمن"
+        val text = "نص عربي تجريبي"
         val r = KashidaJustifier.justifyArabicLine(text, 100f, 300f, 10f)
         assertEquals(text, r.justifiedText.filter { it != KASHIDA })
     }
@@ -130,7 +130,7 @@ class KashidaJustifierTest {
 
     @Test
     fun mapping_size_equals_original_length() {
-        val text = "بسم"
+        val text = "نص"
         val r = KashidaJustifier.justifyArabicLine(text, 50f, 100f, 10f)
         assertEquals(text.length, r.originalToJustifiedIndex.size)
     }

@@ -8,10 +8,15 @@ package com.mohamedrejeb.harfbuzz.compose
  */
 internal object TestFonts {
     private const val ROBOTO_REGULAR_PATH = "/fonts/Roboto-Regular.ttf"
+    private const val NOTO_NASKH_ARABIC_MEDIUM_PATH = "/fonts/NotoNaskhArabic-Medium.ttf"
 
-    fun robotoRegular(): ByteArray {
-        val stream = TestFonts::class.java.getResourceAsStream(ROBOTO_REGULAR_PATH)
-            ?: error("Missing test font on classpath: $ROBOTO_REGULAR_PATH")
+    fun robotoRegular(): ByteArray = loadResource(ROBOTO_REGULAR_PATH)
+
+    fun notoNaskhArabicMedium(): ByteArray = loadResource(NOTO_NASKH_ARABIC_MEDIUM_PATH)
+
+    private fun loadResource(path: String): ByteArray {
+        val stream = TestFonts::class.java.getResourceAsStream(path)
+            ?: error("Missing test font on classpath: $path")
         return stream.use { it.readBytes() }
     }
 }

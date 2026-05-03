@@ -10,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.DrawStyle
@@ -49,6 +50,18 @@ public fun ShapedText(
     font: HbFont,
     modifier: Modifier = Modifier,
     color: Color = Color.Unspecified,
+    /**
+     * Optional [Brush] (e.g. [Brush.linearGradient]) that paints
+     * monochrome glyph silhouettes and COLR v0 foreground-color layers.
+     * When non-null this takes precedence over [color] for those glyphs;
+     * SVG-in-OT bitmaps and COLR v1 paint trees and COLR v0 palette
+     * layers continue to render with their font-designed colors so emoji
+     * and SVG-painted fonts (e.g. Aref Ruqaa Ink) keep their authored
+     * appearance. The brush spans the line's combined silhouette path,
+     * so a gradient flows from the line's leading edge to its trailing
+     * edge rather than repeating per glyph.
+     */
+    brush: Brush? = null,
     features: List<HbFeature> = emptyList(),
     direction: HbDirection = HbDirection.AUTO,
     overflow: ShapedTextOverflow = ShapedTextOverflow.Clip,
@@ -58,7 +71,7 @@ public fun ShapedText(
      * For COLR v0 color fonts: by default each glyph paints with the
      * palette colors baked into the font (so e.g. Aref Ruqaa Ink renders
      * in its designed inks regardless of [color]). Set this to `true` to
-     * suppress that and use [color] for every glyph.
+     * suppress that and use [color] (or [brush]) for every glyph.
      */
     forceForegroundColor: Boolean = false,
     /**
@@ -83,6 +96,7 @@ public fun ShapedText(
         fontStack = stack,
         modifier = modifier,
         color = color,
+        brush = brush,
         features = features,
         direction = direction,
         overflow = overflow,
@@ -107,6 +121,7 @@ public fun ShapedText(
     fontStack: HbFontStack,
     modifier: Modifier = Modifier,
     color: Color = Color.Unspecified,
+    brush: Brush? = null,
     features: List<HbFeature> = emptyList(),
     direction: HbDirection = HbDirection.AUTO,
     overflow: ShapedTextOverflow = ShapedTextOverflow.Clip,
@@ -132,6 +147,7 @@ public fun ShapedText(
                 fontStack = fontStack,
                 modifier = Modifier,
                 color = color,
+                brush = brush,
                 features = features,
                 direction = direction,
                 overflow = overflow,
@@ -150,6 +166,7 @@ public fun ShapedText(
             fontStack = fontStack,
             modifier = modifier,
             color = color,
+            brush = brush,
             features = features,
             direction = direction,
             overflow = overflow,
@@ -170,6 +187,7 @@ private fun ShapedTextBody(
     fontStack: HbFontStack,
     modifier: Modifier,
     color: Color,
+    brush: Brush?,
     features: List<HbFeature>,
     direction: HbDirection,
     overflow: ShapedTextOverflow,
@@ -253,25 +271,49 @@ private fun ShapedTextBody(
                         slotWidth.floatValue >= measured.advance &&
                         slotWidth.floatValue <= measured.advance + 1f
                     if (isLegacyStart) {
-                        drawShapedText(
-                            measured = measured,
-                            color = resolvedColor,
-                            style = style,
-                            forceForegroundColor = forceForegroundColor,
-                            shadow = shadow,
-                        )
+                        if (brush != null) {
+                            drawShapedText(
+                                measured = measured,
+                                brush = brush,
+                                style = style,
+                                forceForegroundColor = forceForegroundColor,
+                                shadow = shadow,
+                            )
+                        } else {
+                            drawShapedText(
+                                measured = measured,
+                                color = resolvedColor,
+                                style = style,
+                                forceForegroundColor = forceForegroundColor,
+                                shadow = shadow,
+                            )
+                        }
                     } else {
-                        drawShapedText(
-                            measured = measured,
-                            availableWidth = slotWidth.floatValue,
-                            alignment = alignment,
-                            direction = measured.paragraph.baseDirection,
-                            overflow = overflow,
-                            color = resolvedColor,
-                            style = style,
-                            forceForegroundColor = forceForegroundColor,
-                            shadow = shadow,
-                        )
+                        if (brush != null) {
+                            drawShapedText(
+                                measured = measured,
+                                availableWidth = slotWidth.floatValue,
+                                brush = brush,
+                                alignment = alignment,
+                                direction = measured.paragraph.baseDirection,
+                                overflow = overflow,
+                                style = style,
+                                forceForegroundColor = forceForegroundColor,
+                                shadow = shadow,
+                            )
+                        } else {
+                            drawShapedText(
+                                measured = measured,
+                                availableWidth = slotWidth.floatValue,
+                                alignment = alignment,
+                                direction = measured.paragraph.baseDirection,
+                                overflow = overflow,
+                                color = resolvedColor,
+                                style = style,
+                                forceForegroundColor = forceForegroundColor,
+                                shadow = shadow,
+                            )
+                        }
                     }
                 }
             },

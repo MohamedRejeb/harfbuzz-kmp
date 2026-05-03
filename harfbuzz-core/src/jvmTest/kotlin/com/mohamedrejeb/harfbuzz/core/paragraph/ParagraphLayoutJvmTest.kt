@@ -205,7 +205,7 @@ class ParagraphLayoutJvmTest {
             face.toFont(32f).use { font ->
                 val stack = HbFontStack(font)
                 val laid = stack.layoutParagraph(
-                    "السلام عليكم",
+                    "نص عربي",
                     maxWidth = 400f,
                     alignment = ParagraphAlignment.Start,
                 )
@@ -230,7 +230,7 @@ class ParagraphLayoutJvmTest {
         HbFace.from { bytes(arabicBytes) }.use { face ->
             face.toFont(24f).use { font ->
                 val stack = HbFontStack(font)
-                val text = "السلام عليكم ورحمة الله وبركاته"
+                val text = "نص عربي تجريبي طويل لاختبار التفاف الأسطر"
                 val laid = stack.layoutParagraph(text, maxWidth = 80f)
                 assertTrue(laid.lineCount >= 2, "expected Arabic wrap, got ${laid.lineCount} lines")
                 // Total char coverage spans the whole text.

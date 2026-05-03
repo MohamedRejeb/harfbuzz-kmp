@@ -517,21 +517,21 @@ private fun ArabicShapingDemo(arabic: HbFont, arabicBold: HbFont) {
     DemoCard(title = "Arabic shaping", subtitle = "Noto Naskh Arabic · 32 px") {
         OutputLabel("Regular")
         ShapedText(
-            text = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+            text = "نَصٌّ عَرَبِيٌّ مُشَكَّلٌ لِلْاِخْتِبَارِ",
             font = arabic,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.height(40.dp).fillMaxWidth(),
         )
         OutputLabel("Mixed Latin + Arabic + numerals")
         ShapedText(
-            text = "Hello مرحبا 123 صلى الله",
+            text = "Hello مرحبا 123 لاختبار",
             font = arabic,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.height(40.dp).fillMaxWidth(),
         )
         OutputLabel("Bold")
         ShapedText(
-            text = "السَّلَامُ عَلَيْكُمْ وَرَحْمَةُ اللهِ",
+            text = "كَلِمَاتٌ عَرَبِيَّةٌ مُشَكَّلَةٌ لِلْاِخْتِبَارِ",
             font = arabicBold,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.height(40.dp).fillMaxWidth(),
@@ -550,9 +550,9 @@ private fun ArabicShapingDemo(arabic: HbFont, arabicBold: HbFont) {
  *     COLR v0 → mono, in that order. For Aref Ruqaa Ink + Noto Color
  *     Emoji this lands on SVG (or COLR v1 on Android).
  *
- * The Aref Ruqaa Ink line shows the same Bismillah our Arabic demo
- * uses, but rendered through the inked gradient artwork the font
- * designer baked into the SVG / paint trees.
+ * The Aref Ruqaa Ink line uses the same neutral Arabic sample our
+ * Arabic demo uses, but rendered through the inked gradient artwork
+ * the font designer baked into the SVG / paint trees.
  */
 @Composable
 private fun ColorGlyphsDemo(arefRuqaaInk: HbFont, emoji: HbFont) {
@@ -574,7 +574,7 @@ private fun ColorGlyphsDemo(arefRuqaaInk: HbFont, emoji: HbFont) {
         }
         OutputLabel("Aref Ruqaa Ink - gradient inks via SVG-in-OT")
         ShapedText(
-            text = "بسم الله الرحمن الرحيم",
+            text = "نص عربي تجريبي للاختبار",
             font = arefRuqaaInk,
             color = MaterialTheme.colorScheme.primary,
             forceForegroundColor = forceForeground,
@@ -582,7 +582,7 @@ private fun ColorGlyphsDemo(arefRuqaaInk: HbFont, emoji: HbFont) {
         )
         OutputLabel("Noto Color Emoji - multi-layer paint trees")
         ShapedText(
-            text = "😀🌍🎉🌈❤️🦊🐱🍕",
+            text = "😀🌍🎉⭐❤️🦊🐱🍕",
             font = emoji,
             forceForegroundColor = forceForeground,
             modifier = Modifier.height(72.dp).fillMaxWidth(),
@@ -627,7 +627,7 @@ private fun FallbackFontsDemo(latin: HbFont, arabic: HbFont, emoji: HbFont) {
         )
         OutputLabel("Arabic - every cluster falls back to Noto Naskh")
         ShapedText(
-            text = "بسم الله الرحمن الرحيم",
+            text = "نص عربي تجريبي للاختبار",
             fontStack = stack,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.height(40.dp).fillMaxWidth(),
@@ -899,7 +899,7 @@ private fun FeatureToggleDemo(font: HbFont) {
             )
         }
         ShapedText(
-            text = "لا الله إلا الله محمد رسول الله",
+            text = "لا كلام بلا فائدة في الحوار",
             font = font,
             color = MaterialTheme.colorScheme.onBackground,
             features = features,
@@ -1495,7 +1495,7 @@ private fun ArcTextDemo(font: HbFont) {
             contentAlignment = Alignment.Center,
         ) {
             ArcText(
-                text = "بسم الله الرحمن الرحيم",
+                text = "نص عربي تجريبي للاختبار",
                 font = font,
                 radius = radiusDp.dp,
                 side = ArcSide.Outside,

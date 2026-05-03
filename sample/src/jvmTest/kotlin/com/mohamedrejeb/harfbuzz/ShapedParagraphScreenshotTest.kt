@@ -161,7 +161,7 @@ class ShapedParagraphScreenshotTest {
         rule.captureGolden("paragraph_arabic_wrap_rtl.png") {
             Stage {
                 ShapedParagraphText(
-                    text = "السلام عليكم ورحمة الله وبركاته. هذا اختبار التفاف للنص العربي على عدة أسطر.",
+                    text = "هذا نص عربي تجريبي طويل لاختبار التفاف النصوص العربية على عدة أسطر متتالية.",
                     font = font,
                     color = Color.Black,
                     direction = HbDirection.RTL,
@@ -180,7 +180,7 @@ class ShapedParagraphScreenshotTest {
         rule.captureGolden("paragraph_arabic_center.png") {
             Stage {
                 ShapedParagraphText(
-                    text = "بسم الله الرحمن الرحيم. السلام عليكم ورحمة الله.",
+                    text = "نص عربي تجريبي للاختبار. كلمات لعرض الخطوط العربية.",
                     font = font,
                     color = Color.Black,
                     alignment = ParagraphAlignment.Center,
@@ -200,7 +200,7 @@ class ShapedParagraphScreenshotTest {
         rule.captureGolden("paragraph_arabic_left.png") {
             Stage {
                 ShapedParagraphText(
-                    text = "بسم الله الرحمن الرحيم. السلام عليكم ورحمة الله.",
+                    text = "نص عربي تجريبي للاختبار. كلمات لعرض الخطوط العربية.",
                     font = font,
                     color = Color.Black,
                     alignment = ParagraphAlignment.Left,
@@ -220,7 +220,7 @@ class ShapedParagraphScreenshotTest {
         rule.captureGolden("paragraph_arabic_right.png") {
             Stage {
                 ShapedParagraphText(
-                    text = "بسم الله الرحمن الرحيم. السلام عليكم ورحمة الله.",
+                    text = "نص عربي تجريبي للاختبار. كلمات لعرض الخطوط العربية.",
                     font = font,
                     color = Color.Black,
                     alignment = ParagraphAlignment.Right,
@@ -262,7 +262,7 @@ class ShapedParagraphScreenshotTest {
         rule.captureGolden("paragraph_arabic_justify_kashida.png") {
             Stage {
                 ShapedParagraphText(
-                    text = "بسم الله الرحمن الرحيم. السلام عليكم ورحمة الله وبركاته.",
+                    text = "نص عربي تجريبي للاختبار. كلمات لاختبار التفاف الأسطر العربية.",
                     font = font,
                     color = Color.Black,
                     alignment = ParagraphAlignment.Justify,
@@ -284,7 +284,7 @@ class ShapedParagraphScreenshotTest {
         rule.captureGolden("paragraph_arabic_justify_wordspacing.png") {
             Stage {
                 ShapedParagraphText(
-                    text = "بسم الله الرحمن الرحيم. السلام عليكم ورحمة الله وبركاته.",
+                    text = "نص عربي تجريبي للاختبار. كلمات لاختبار التفاف الأسطر العربية.",
                     font = font,
                     color = Color.Black,
                     alignment = ParagraphAlignment.Justify,

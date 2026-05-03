@@ -136,7 +136,7 @@ internal suspend fun buildMeasuredTextWithJustify(
         WordSpacingJustifier.THIN_SPACE.toString(), direction, features, language,
     ).totalAdvance
 
-    val justifiedText = LineJustifier.justify(
+    val justified = LineJustifier.justify(
         text = text,
         strategy = justification,
         currentWidth = initial.advance,
@@ -144,8 +144,8 @@ internal suspend fun buildMeasuredTextWithJustify(
         kashidaGlyphWidth = kashidaWidth,
         thinSpaceWidth = thinSpaceWidth,
     )
-    if (justifiedText.length == text.length) return initial
-    return buildMeasuredText(justifiedText, fontStack, features, direction, language)
+    if (justified.justifiedText.length == text.length) return initial
+    return buildMeasuredText(justified.justifiedText, fontStack, features, direction, language)
 }
 
 private fun isStaleHbHandle(cause: Throwable): Boolean =
@@ -244,6 +244,7 @@ private suspend fun buildMeasuredTextUncached(
         ascent = ascent,
         descent = descent,
         lineGap = lineGap,
+        textLength = text.length,
         flippedPathsByFont = flippedPathsByFont,
         rawPathsByFont = rawPathsByFont,
         colorLayersByFont = colorLayersByFont,

@@ -15,7 +15,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Dp
@@ -46,7 +48,7 @@ import org.junit.Test
  *
  * Coverage:
  *  - Latin (Roboto) - baseline rendering, no GPOS marks.
- *  - Arabic with tashkeel - the Bismillah, exercises mark positioning so
+ *  - Arabic with tashkeel - mark positioning across base letters so
  *    regressions in y_offset sign re-surface here as the wrong dot/mark Y.
  *  - Mixed BiDi - Latin + Arabic + Arabic-Indic numerals on one line.
  *  - Arabic Bold - heavier weight rendering through the Naskh GPOS table.
@@ -126,12 +128,12 @@ class ShapedTextScreenshotTest {
     }
 
     @Test
-    fun `arabic naskh regular bismillah with tashkeel`() {
+    fun `arabic naskh regular tashkeel sample`() {
         val font = loadFont(FontPath.ARABIC_REGULAR, 32f)
-        rule.captureGolden("shaped_arabic_bismillah_tashkeel.png") {
+        rule.captureGolden("shaped_arabic_tashkeel_sample.png") {
             Stage {
                 ShapedText(
-                    text = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+                    text = "نَصٌّ عَرَبِيٌّ مُشَكَّلٌ لِلْاِخْتِبَارِ",
                     font = font,
                     color = Color.Black,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -146,7 +148,7 @@ class ShapedTextScreenshotTest {
         rule.captureGolden("shaped_arabic_plain_words.png") {
             Stage {
                 ShapedText(
-                    text = "أنت السلام عليكم تجربة",
+                    text = "أهلا كلمات عربية للتجربة",
                     font = font,
                     color = Color.Black,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -156,12 +158,12 @@ class ShapedTextScreenshotTest {
     }
 
     @Test
-    fun `arabic naskh bold greeting`() {
+    fun `arabic naskh bold tashkeel greeting`() {
         val font = loadFont(FontPath.ARABIC_BOLD, 32f)
-        rule.captureGolden("shaped_arabic_bold_greeting.png") {
+        rule.captureGolden("shaped_arabic_bold_tashkeel_greeting.png") {
             Stage {
                 ShapedText(
-                    text = "السَّلَامُ عَلَيْكُمْ وَرَحْمَةُ اللهِ",
+                    text = "كَلِمَاتٌ عَرَبِيَّةٌ مُشَكَّلَةٌ لِلْاِخْتِبَارِ",
                     font = font,
                     color = Color.Black,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -176,7 +178,7 @@ class ShapedTextScreenshotTest {
         rule.captureGolden("shaped_mixed_bidi.png") {
             Stage {
                 ShapedText(
-                    text = "Hello مرحبا 123 محمد صلى الله عليه وسلم",
+                    text = "Hello مرحبا 123 لاختبار النصوص العربية",
                     font = font,
                     color = Color.Black,
                     modifier = Modifier.fillMaxWidth().height(40.dp),
@@ -191,7 +193,7 @@ class ShapedTextScreenshotTest {
         rule.captureGolden("shaped_arabic_lam_alef.png") {
             Stage {
                 ShapedText(
-                    text = "لا الله إلا الله",
+                    text = "لا كلام بلا فائدة",
                     font = font,
                     color = Color.Black,
                     modifier = Modifier.fillMaxWidth().height(64.dp),
@@ -252,7 +254,7 @@ class ShapedTextScreenshotTest {
         rule.captureGolden("shaped_bounds_overlay_arabic.png") {
             Stage {
                 ShapedTextWithBounds(
-                    text = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+                    text = "نَصٌّ عَرَبِيٌّ مُشَكَّلٌ لِلْاِخْتِبَارِ",
                     font = font,
                     color = Color.Black,
                 )
@@ -266,7 +268,7 @@ class ShapedTextScreenshotTest {
         rule.captureGolden("shaped_aref_ruqaa_regular.png") {
             Stage {
                 ShapedText(
-                    text = "بسم الله الرحمن الرحيم",
+                    text = "نص عربي تجريبي للاختبار",
                     font = font,
                     color = Color.Black,
                     modifier = Modifier.fillMaxWidth().height(56.dp),
@@ -281,7 +283,7 @@ class ShapedTextScreenshotTest {
         rule.captureGolden("shaped_aref_ruqaa_bold.png") {
             Stage {
                 ShapedText(
-                    text = "السلام عليكم",
+                    text = "نص عربي",
                     font = font,
                     color = Color.Black,
                     modifier = Modifier.fillMaxWidth().height(56.dp),
@@ -293,9 +295,9 @@ class ShapedTextScreenshotTest {
     /**
      * Aref Ruqaa Ink ships COLR v1 + CPAL + SVG color tables. The default
      * draw path now walks the paint tree via [ComposePaintSink], so the
-     * Bismillah here renders with the font's designed gradient inks
-     * instead of the caller's foreground color (the [color] parameter is
-     * only used for layers that explicitly reference the foreground).
+     * sample text renders with the font's designed gradient inks instead
+     * of the caller's foreground color (the [color] parameter is only
+     * used for layers that explicitly reference the foreground).
      */
     @Test
     fun `aref ruqaa ink colr v1 paints gradient inks`() {
@@ -303,7 +305,7 @@ class ShapedTextScreenshotTest {
         rule.captureGolden("shaped_aref_ruqaa_ink_v1_paint.png") {
             Stage {
                 ShapedText(
-                    text = "بسم الله الرحمن الرحيم",
+                    text = "نص عربي تجريبي للاختبار",
                     font = font,
                     color = Color(0xFFB00020),
                     modifier = Modifier.fillMaxWidth().height(64.dp),
@@ -324,7 +326,7 @@ class ShapedTextScreenshotTest {
         rule.captureGolden("shaped_aref_ruqaa_ink_v1_force_foreground.png") {
             Stage {
                 ShapedText(
-                    text = "بسم الله الرحمن الرحيم",
+                    text = "نص عربي تجريبي للاختبار",
                     font = font,
                     color = Color(0xFFB00020),
                     forceForegroundColor = true,
@@ -346,7 +348,7 @@ class ShapedTextScreenshotTest {
         rule.captureGolden("shaped_aref_ruqaa_ink_v1_paint_80pt.png") {
             Stage {
                 ShapedText(
-                    text = "بسم الله الرحمن الرحيم",
+                    text = "نص عربي تجريبي للاختبار",
                     font = font,
                     color = Color(0xFFB00020),
                     modifier = Modifier.fillMaxWidth().height(120.dp),
@@ -368,7 +370,7 @@ class ShapedTextScreenshotTest {
         rule.captureGolden("shaped_noto_color_emoji.png") {
             Stage {
                 ShapedText(
-                    text = "😀🌍🎉🌈",
+                    text = "😀🌍🎉⭐",
                     font = font,
                     modifier = Modifier.fillMaxWidth().height(96.dp),
                 )
@@ -382,7 +384,7 @@ class ShapedTextScreenshotTest {
         rule.captureGolden("shaped_bounds_overlay_aref_ruqaa.png") {
             Stage {
                 ShapedTextWithBounds(
-                    text = "بسم الله الرحمن الرحيم",
+                    text = "نص عربي تجريبي للاختبار",
                     font = font,
                     color = Color.Black,
                 )
@@ -411,7 +413,7 @@ class ShapedTextScreenshotTest {
         rule.captureGolden("shaped_arabic_color_teal.png") {
             Stage {
                 ShapedText(
-                    text = "السلام عليكم",
+                    text = "نص عربي",
                     font = font,
                     color = Color(0xFF00897B),
                     modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -444,7 +446,7 @@ class ShapedTextScreenshotTest {
         rule.captureGolden("shaped_bounds_overlay_mixed_bidi.png") {
             Stage {
                 ShapedTextWithBounds(
-                    text = "Hello مرحبا 123 محمد صلى الله عليه وسلم",
+                    text = "Hello مرحبا 123 لاختبار النصوص العربية",
                     font = font,
                     color = Color.Black,
                 )
@@ -458,7 +460,7 @@ class ShapedTextScreenshotTest {
         rule.captureGolden("shaped_bounds_overlay_arabic_plain.png") {
             Stage {
                 ShapedTextWithBounds(
-                    text = "أنت السلام عليكم تجربة",
+                    text = "أهلا كلمات عربية للتجربة",
                     font = font,
                     color = Color.Black,
                 )
@@ -472,7 +474,7 @@ class ShapedTextScreenshotTest {
         rule.captureGolden("shaped_arabic_explicit_rtl.png") {
             Stage {
                 ShapedText(
-                    text = "بسم الله الرحمن الرحيم",
+                    text = "نص عربي تجريبي للاختبار",
                     font = font,
                     color = Color.Black,
                     direction = HbDirection.RTL,
@@ -819,6 +821,195 @@ class ShapedTextScreenshotTest {
         }
     }
 
+    // ===== Brush fill / stroke =====
+    //
+    // [Brush]-based variants of [ShapedText]: monochrome glyph silhouettes
+    // (and COLR v0 foreground-color layers) are accumulated into a single
+    // path so a [Brush.linearGradient] / [Brush.horizontalGradient] spans
+    // the line instead of repeating per glyph. Designed-color glyphs - SVG
+    // bitmaps, COLR v1 paint trees, and COLR v0 palette layers - keep
+    // their authored colors so emoji and Aref Ruqaa Ink continue to paint
+    // with their own gradients.
+
+    @Test
+    fun `latin brush horizontal gradient fill`() {
+        val font = loadFont(FontPath.LATIN_REGULAR, 32f)
+        rule.captureGolden("shaped_brush_latin_horizontal_gradient.png") {
+            Stage {
+                ShapedText(
+                    text = "Hello, gradient world!",
+                    font = font,
+                    brush = Brush.horizontalGradient(
+                        listOf(
+                            Color(0xFFE91E63),
+                            Color(0xFF673AB7),
+                            Color(0xFF2196F3),
+                        ),
+                    ),
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `arabic brush horizontal gradient fill`() {
+        val font = loadFont(FontPath.ARABIC_REGULAR, 36f)
+        rule.captureGolden("shaped_brush_arabic_horizontal_gradient.png") {
+            Stage {
+                ShapedText(
+                    text = "نص متدرج الألوان",
+                    font = font,
+                    brush = Brush.horizontalGradient(
+                        listOf(
+                            Color(0xFFFF5722),
+                            Color(0xFFFFC107),
+                        ),
+                    ),
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `latin brush vertical gradient stroke`() {
+        val font = loadFont(FontPath.LATIN_REGULAR, 56f)
+        rule.captureGolden("shaped_brush_latin_stroke_gradient.png") {
+            Stage {
+                ShapedText(
+                    text = "Stroke",
+                    font = font,
+                    brush = Brush.verticalGradient(
+                        listOf(
+                            Color(0xFF1976D2),
+                            Color(0xFF388E3C),
+                        ),
+                    ),
+                    style = Stroke(width = 2f),
+                    modifier = Modifier.fillMaxWidth().height(80.dp),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `latin brush with shadow`() {
+        val font = loadFont(FontPath.LATIN_REGULAR, 32f)
+        rule.captureGolden("shaped_brush_latin_with_shadow.png") {
+            Stage {
+                ShapedText(
+                    text = "Gradient with shadow",
+                    font = font,
+                    brush = Brush.horizontalGradient(
+                        listOf(Color(0xFFE91E63), Color(0xFF2196F3)),
+                    ),
+                    shadow = Shadow(
+                        color = Color.Black.copy(alpha = 0.3f),
+                        offset = Offset(2f, 2f),
+                        blurRadius = 4f,
+                    ),
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                )
+            }
+        }
+    }
+
+    /**
+     * Brush spans the line's combined silhouette path. With Compress
+     * the line is squeezed to the slot, so the gradient maps to the
+     * slot width too - pins that the brush draw runs after the
+     * spacing scale so the path bounds reflect compressed positions.
+     */
+    @Test
+    fun `latin brush in slot with compress`() {
+        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        rule.captureGolden("shaped_brush_latin_compress.png") {
+            Stage {
+                ShapedTextInSlot(
+                    text = LATIN_LOREM,
+                    font = font,
+                    slotWidth = 280.dp,
+                    brush = Brush.horizontalGradient(
+                        listOf(Color(0xFFE91E63), Color(0xFF2196F3)),
+                    ),
+                    overflow = ShapedTextOverflow.Compress,
+                )
+            }
+        }
+    }
+
+    /**
+     * COLR v1 designed colors must survive a brush argument: Aref Ruqaa
+     * Ink should still paint with its own gradient inks because the
+     * paint tree owns the foreground. Pins that the brush-aware draw
+     * path does not accidentally tint COLR v1 glyphs.
+     */
+    @Test
+    fun `aref ruqaa ink brush preserves designed colors`() {
+        val font = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 40f)
+        rule.captureGolden("shaped_brush_aref_ruqaa_ink_unchanged.png") {
+            Stage {
+                ShapedText(
+                    text = "نص عربي تجريبي للاختبار",
+                    font = font,
+                    brush = Brush.horizontalGradient(
+                        listOf(Color(0xFF00BCD4), Color(0xFFE91E63)),
+                    ),
+                    modifier = Modifier.fillMaxWidth().height(64.dp),
+                )
+            }
+        }
+    }
+
+    /**
+     * Color emoji + brush: each glyph still walks its COLR v1 paint
+     * tree, so the brush has no effect. Pins that the plumbing does
+     * not accidentally tint emoji silhouettes when a brush is
+     * supplied.
+     */
+    @Test
+    fun `noto color emoji brush preserves designed colors`() {
+        val font = loadFont(FontPath.EMOJI, 64f)
+        rule.captureGolden("shaped_brush_emoji_unchanged.png") {
+            Stage {
+                ShapedText(
+                    text = "😀🌍🎉⭐",
+                    font = font,
+                    brush = Brush.horizontalGradient(
+                        listOf(Color.Cyan, Color.Magenta),
+                    ),
+                    modifier = Modifier.fillMaxWidth().height(96.dp),
+                )
+            }
+        }
+    }
+
+    /**
+     * Brush + forceForegroundColor opts a COLR v1 font into the
+     * silhouette path, so Aref Ruqaa Ink's glyphs paint with the
+     * gradient instead of the font's designed inks. (Noto Color Emoji
+     * cannot demonstrate this: its glyphs ship empty base outlines, so
+     * forceForegroundColor renders nothing.)
+     */
+    @Test
+    fun `aref ruqaa ink brush force foreground tints silhouettes`() {
+        val font = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 40f)
+        rule.captureGolden("shaped_brush_aref_ruqaa_ink_force_foreground.png") {
+            Stage {
+                ShapedText(
+                    text = "نص عربي تجريبي للاختبار",
+                    font = font,
+                    brush = Brush.horizontalGradient(
+                        listOf(Color(0xFF00BCD4), Color(0xFFE91E63)),
+                    ),
+                    forceForegroundColor = true,
+                    modifier = Modifier.fillMaxWidth().height(64.dp),
+                )
+            }
+        }
+    }
+
     /**
      * Renders [text] inside a fixed [slotWidth] x [slotHeight] box stroked in
      * cyan so the alignment / justify / overflow effect is visible against
@@ -840,6 +1031,7 @@ class ShapedTextScreenshotTest {
         overflow: ShapedTextOverflow = ShapedTextOverflow.Clip,
         direction: HbDirection = HbDirection.AUTO,
         color: Color = Color.Black,
+        brush: Brush? = null,
         slotColor: Color = Color(0xFF00BCD4),
     ) {
         Box(
@@ -854,6 +1046,7 @@ class ShapedTextScreenshotTest {
                 text = text,
                 font = font,
                 color = color,
+                brush = brush,
                 direction = direction,
                 alignment = alignment,
                 justification = justification,

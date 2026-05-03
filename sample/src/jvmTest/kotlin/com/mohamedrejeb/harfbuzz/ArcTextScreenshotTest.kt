@@ -33,7 +33,7 @@ import org.junit.Test
  *
  * Coverage:
  *   - Latin on the outside of a circle (the canonical demo).
- *   - Arabic Naskh on the outside (Bismillah).
+ *   - Arabic Naskh on the outside (multi-word neutral sample).
  *   - Arabic Naskh on the inside (auto-flipped letterforms).
  *   - Counter-clockwise direction.
  *   - Fixed sweep (compressed glyph spacing).
@@ -84,7 +84,7 @@ class ArcTextScreenshotTest {
         rule.captureGolden("arc_text_arabic_outside_auto.png") {
             ArcStage {
                 ArcText(
-                    text = "بسم الله الرحمن الرحيم",
+                    text = "نص عربي تجريبي للاختبار",
                     font = font,
                     radius = 110.dp,
                     side = ArcSide.Outside,
@@ -136,7 +136,7 @@ class ArcTextScreenshotTest {
         rule.captureGolden("arc_text_arabic_fixed_180.png") {
             ArcStage {
                 ArcText(
-                    text = "بسم الله الرحمن الرحيم",
+                    text = "نص عربي تجريبي للاختبار",
                     font = font,
                     radius = 110.dp,
                     side = ArcSide.Outside,
