@@ -317,7 +317,8 @@ private suspend fun HbFontStack.applyJustification(
 ) {
     if (rawLines.size <= 1) return
 
-    val needsKashidaWidth = justification == JustificationStrategy.Mixed
+    val needsKashidaWidth = justification == JustificationStrategy.Mixed ||
+        justification is JustificationStrategy.KashidaTo
     val kashidaWidth = if (needsKashidaWidth) {
         shapeParagraph(ArabicTextUtils.KASHIDA.toString(), baseDirection, features, language).totalAdvance
     } else 0f

@@ -45,10 +45,17 @@ public class MeasuredText internal constructor(
     /** Extra vertical space the font designer recommends between lines. */
     public val lineGap: Float,
     /**
-     * Length of the source text in UTF-16 code units. Recorded so the
-     * char-keyed accessors ([horizontalPositionOf], [advanceWidthOf],
-     * [clusterAt]) can validate indices and resolve `charIndex == length`
-     * to the trailing edge of the line.
+     * Length of the source text in UTF-16 code units, in the **original
+     * text's** coordinate space. The char-keyed accessors
+     * ([horizontalPositionOf], [advanceWidthOf], [clusterAt]) accept
+     * indices in `[0, textLength]` (or `[0, textLength)` for the
+     * advance accessor) and translate them into the shaped run via
+     * [originalToJustifiedIndex] when justification widened the line.
+     *
+     * For un-justified shapes this equals the shaped text's length;
+     * with [JustificationStrategy.Mixed] / `WordSpacing` it is the
+     * pre-insertion length so callers can keep working in the source
+     * text's coordinates.
      */
     public val textLength: Int,
     /**
@@ -93,6 +100,26 @@ public class MeasuredText internal constructor(
      * can't).
      */
     public val hasColorSvg: Boolean,
+    /**
+     * When justification inserted Kashida (U+0640) or thin-space
+     * (U+2009) glyphs, mapping from each original char index to its
+     * position in the shaped (justified) text. Length equals
+     * [textLength]; entries are monotonically increasing.
+     *
+     * `null` (the default) means no insertions happened, so the
+     * original and shaped texts coincide and char-keyed accessors can
+     * skip the indirection.
+     */
+    internal val originalToJustifiedIndex: IntArray? = null,
+    /**
+     * Length of the shaped text in UTF-16 code units - i.e. the string
+     * actually passed to the shaper after justification. Equals
+     * [textLength] for un-justified shapes; otherwise larger (the
+     * inserted connectors widen the run). Used internally to size the
+     * cluster lookup table; public callers should keep using
+     * [textLength] which is in the original text's coordinate space.
+     */
+    internal val shapedTextLength: Int = textLength,
 ) {
     /** The primary font (kept for backward compatibility). */
     public val font: HbFont get() = fontStack.primary
@@ -154,6 +181,11 @@ public class MeasuredText internal constructor(
      * cluster's leading edge - the cluster is treated as a single
      * unbreakable unit, matching HarfBuzz's cluster semantics and
      * Compose's `getHorizontalPosition` for cluster-internal offsets.
+     *
+     * When the run was justified, [charIndex] is in the **original**
+     * text's coordinate space; the lookup translates through
+     * [originalToJustifiedIndex] before reading the cluster table so
+     * inserted Kashida / thin-space glyphs do not shift query indices.
      */
     public fun horizontalPositionOf(charIndex: Int): Float {
         require(charIndex in 0..textLength) {
@@ -162,7 +194,8 @@ public class MeasuredText internal constructor(
         if (charIndex == textLength) {
             return paragraphTrailingEdgeX
         }
-        val clusterId = charToClusterArray[charIndex]
+        val shapedIndex = toShapedIndex(charIndex)
+        val clusterId = charToClusterArray[shapedIndex]
         return clusterPositionMap[clusterId]?.leadingX ?: 0f
     }
 
@@ -170,16 +203,27 @@ public class MeasuredText internal constructor(
      * Per-character advance width. The cluster's full advance is
      * attributed to its leading codepoint; every other codepoint in
      * the cluster (combining marks, non-BMP trail surrogates,
-     * intra-ligature characters) returns `0f`. Summing
-     * [advanceWidthOf] over `0 until textLength` therefore equals
-     * [advance] regardless of clustering.
+     * intra-ligature characters) returns `0f`. For an un-justified
+     * shape, summing [advanceWidthOf] over `0 until textLength`
+     * therefore equals [advance] regardless of clustering.
+     *
+     * For justified shapes [advanceWidthOf] returns the original
+     * cluster's advance only. Inserted Kashida / thin-space glyphs
+     * carry their own shaped clusters that no original char owns, so
+     * their width is *not* folded into adjacent originals - summing
+     * over `0 until textLength` then equals the un-justified line
+     * advance, not the widened [advance]. Callers that need per-glyph
+     * widths along the justified run should iterate shaped indices
+     * directly.
      */
     public fun advanceWidthOf(charIndex: Int): Float {
         require(charIndex in 0 until textLength) {
             "charIndex=$charIndex out of [0, $textLength)"
         }
-        val clusterId = charToClusterArray[charIndex]
-        if (charIndex != clusterId) return 0f
+        val shapedIndex = toShapedIndex(charIndex)
+        val clusterId = charToClusterArray[shapedIndex]
+        val originalClusterLeader = toOriginalIndex(clusterId)
+        if (charIndex != originalClusterLeader) return 0f
         return clusterPositionMap[clusterId]?.advance ?: 0f
     }
 
@@ -189,10 +233,39 @@ public class MeasuredText internal constructor(
      * range. HarfBuzz clusters are codepoint-indexed under the default
      * cluster level, so for ligatures this is the leading character
      * and for combining mark sequences it's the base character.
+     *
+     * The returned id is in the **original** text's coordinate space:
+     * for justified runs the shaped cluster id is reverse-mapped
+     * through [originalToJustifiedIndex] so callers always see the
+     * original character that owns the cluster, even when the
+     * cluster's first glyph is an inserted Kashida.
      */
     public fun clusterAt(charIndex: Int): Int? {
         if (charIndex !in 0 until textLength) return null
-        return charToClusterArray[charIndex]
+        val shapedIndex = toShapedIndex(charIndex)
+        val shapedClusterId = charToClusterArray[shapedIndex]
+        return toOriginalIndex(shapedClusterId)
+    }
+
+    /**
+     * Translate an original-text char index to its shaped-text
+     * counterpart. Identity when no justification mapping is present.
+     */
+    private fun toShapedIndex(originalIndex: Int): Int =
+        originalToJustifiedIndex?.get(originalIndex) ?: originalIndex
+
+    /**
+     * Translate a shaped-text index back to the original char that
+     * owns the cluster. Reverse search exploits the mapping's
+     * monotonically-increasing invariant: each justifier appends to
+     * the builder in order, so a single binary search resolves
+     * cluster ownership in O(log textLength).
+     */
+    private fun toOriginalIndex(shapedIndex: Int): Int {
+        val mapping = originalToJustifiedIndex ?: return shapedIndex
+        if (mapping.isEmpty()) return 0
+        val raw = mapping.binarySearch(shapedIndex)
+        return if (raw >= 0) raw else (-raw - 2).coerceAtLeast(0)
     }
 
     /**
@@ -245,20 +318,26 @@ public class MeasuredText internal constructor(
     /**
      * Per-codepoint cluster index, materialised once on first cluster
      * query. Each entry holds the cluster id (= leading codepoint of
-     * the cluster) the codepoint belongs to. Built by walking every
-     * run's glyphs to collect cluster starts, then carrying each start
-     * forward through the gaps between starts so cluster-internal
-     * codepoints inherit their base's cluster id.
+     * the cluster, in shaped-text coordinates) the codepoint belongs
+     * to. Built by walking every run's glyphs to collect cluster
+     * starts, then carrying each start forward through the gaps
+     * between starts so cluster-internal codepoints inherit their
+     * base's cluster id.
+     *
+     * Sized by [shapedTextLength] so that justified runs (where the
+     * shaped string is longer than the original) keep one entry per
+     * shaped codepoint - public accessors translate original indices
+     * into this space via [toShapedIndex].
      */
     private val charToClusterArray: IntArray by lazy {
-        if (textLength == 0) return@lazy IntArray(0)
+        if (shapedTextLength == 0) return@lazy IntArray(0)
         val starts = HashSet<Int>()
         for (run in paragraph.runs) {
             for (g in run.glyphs) starts.add(g.cluster)
         }
-        val out = IntArray(textLength)
+        val out = IntArray(shapedTextLength)
         var current = if (0 in starts) 0 else -1
-        for (i in 0 until textLength) {
+        for (i in 0 until shapedTextLength) {
             if (i in starts) current = i
             out[i] = if (current >= 0) current else 0
         }
@@ -350,3 +429,36 @@ public class MeasuredText internal constructor(
 }
 
 internal fun HbRect.toComposeRect(): Rect = Rect(left, top, right, bottom)
+
+/**
+ * Wrap [this] (built from a justified text) with an original-text view
+ * so the public char-keyed accessors accept original-space indices and
+ * [textLength] reports the original length. All glyph caches are reused
+ * by reference - the wrapper only flips the public surface, not the
+ * underlying shape data.
+ */
+internal fun MeasuredText.withOriginalMapping(
+    originalTextLength: Int,
+    mapping: IntArray,
+): MeasuredText = MeasuredText(
+    paragraph = paragraph,
+    fontStack = fontStack,
+    ink = ink,
+    logical = logical,
+    baseline = baseline,
+    advance = advance,
+    ascent = ascent,
+    descent = descent,
+    lineGap = lineGap,
+    textLength = originalTextLength,
+    flippedPathsByFont = flippedPathsByFont,
+    rawPathsByFont = rawPathsByFont,
+    colorLayersByFont = colorLayersByFont,
+    paintTreesByFont = paintTreesByFont,
+    svgGlyphCachesByFont = svgGlyphCachesByFont,
+    hasColorGlyphs = hasColorGlyphs,
+    hasColorPaintTree = hasColorPaintTree,
+    hasColorSvg = hasColorSvg,
+    originalToJustifiedIndex = mapping,
+    shapedTextLength = textLength,
+)

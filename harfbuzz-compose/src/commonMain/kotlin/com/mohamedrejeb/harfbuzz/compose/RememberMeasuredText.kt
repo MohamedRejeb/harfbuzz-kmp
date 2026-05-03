@@ -102,12 +102,17 @@ public fun rememberMeasuredText(
 }
 
 /**
- * Build a [MeasuredText] for [text]; if [maxWidth] is finite and
- * [justification] is non-[JustificationStrategy.None], widen the line
- * by inserting extra Kashida / thin-space glyphs and re-shape so the
- * resulting advance approaches [maxWidth]. Returns the un-justified
- * build whenever there is no slack to distribute (advance already at
- * or beyond [maxWidth], empty text, no insertion points).
+ * Build a [MeasuredText] for [text]; if [justification] is non-
+ * [JustificationStrategy.None] and a finite target width is available,
+ * widen the line by inserting extra Kashida / thin-space glyphs and
+ * re-shape so the resulting advance approaches the target. Returns the
+ * un-justified build whenever there is no slack to distribute (advance
+ * already at or beyond the target, empty text, no insertion points).
+ *
+ * The target width is normally [maxWidth]; for
+ * [JustificationStrategy.KashidaTo] the strategy's embedded
+ * `targetWidthPx` overrides it so callers can keep `maxWidth` infinite
+ * (no wrap) while still driving Kashida insertion.
  */
 internal suspend fun buildMeasuredTextWithJustify(
     text: String,
@@ -119,15 +124,21 @@ internal suspend fun buildMeasuredTextWithJustify(
     justification: JustificationStrategy,
 ): MeasuredText {
     val initial = buildMeasuredText(text, fontStack, features, direction, language)
+    val targetWidth = when (justification) {
+        is JustificationStrategy.KashidaTo -> justification.targetWidthPx
+        else -> maxWidth
+    }
     if (
         text.isEmpty() ||
         justification == JustificationStrategy.None ||
-        maxWidth.isInfinite() ||
-        maxWidth <= 0f ||
-        initial.advance >= maxWidth
+        targetWidth.isInfinite() ||
+        targetWidth <= 0f ||
+        initial.advance >= targetWidth
     ) return initial
 
-    val kashidaWidth = if (justification == JustificationStrategy.Mixed) {
+    val needsKashidaWidth = justification == JustificationStrategy.Mixed ||
+        justification is JustificationStrategy.KashidaTo
+    val kashidaWidth = if (needsKashidaWidth) {
         fontStack.shapeParagraph(
             ArabicTextUtils.KASHIDA.toString(), direction, features, language,
         ).totalAdvance
@@ -140,12 +151,16 @@ internal suspend fun buildMeasuredTextWithJustify(
         text = text,
         strategy = justification,
         currentWidth = initial.advance,
-        targetWidth = maxWidth,
+        targetWidth = targetWidth,
         kashidaGlyphWidth = kashidaWidth,
         thinSpaceWidth = thinSpaceWidth,
     )
     if (justified.justifiedText.length == text.length) return initial
-    return buildMeasuredText(justified.justifiedText, fontStack, features, direction, language)
+    val shaped = buildMeasuredText(
+        justified.justifiedText, fontStack, features, direction, language,
+    )
+    val mapping = justified.originalToJustifiedIndex ?: return shaped
+    return shaped.withOriginalMapping(originalTextLength = text.length, mapping = mapping)
 }
 
 private fun isStaleHbHandle(cause: Throwable): Boolean =

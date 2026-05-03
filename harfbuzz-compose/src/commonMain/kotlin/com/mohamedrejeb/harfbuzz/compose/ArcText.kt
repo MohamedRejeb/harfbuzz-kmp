@@ -126,6 +126,61 @@ public fun ArcText(
 }
 
 /**
+ * Render a pre-shaped [measured] text along an arc of [radius].
+ * Identical placement and draw rules as the `(text, font, ...)` and
+ * `(text, fontStack, ...)` overloads, but skips the internal
+ * [rememberMeasuredText] call so callers can pre-justify the run.
+ *
+ * The intended use case is arc Kashida: shape `text` with
+ * [com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy.KashidaTo]
+ * targeting the arc length, then hand the resulting [MeasuredText]
+ * straight to this overload. The text is drawn whatever advance the
+ * justified shape produced; widening the input is the caller's job.
+ */
+@Composable
+public fun ArcText(
+    measured: MeasuredText,
+    radius: Dp,
+    modifier: Modifier = Modifier,
+    startAngle: Float = 0f,
+    direction: ArcDirection = ArcDirection.Clockwise,
+    side: ArcSide = ArcSide.Outside,
+    color: Color = Color.Black,
+    alignment: ArcAlignment = ArcAlignment.Start,
+    style: DrawStyle = Fill,
+    shadow: Shadow? = null,
+) {
+    Box(
+        modifier = modifier.drawBehind {
+            if (measured.isEmpty) return@drawBehind
+            val rPx = radius.toPx()
+            val arcPath = buildArcPath(
+                size = size,
+                radiusPx = rPx,
+                startAngleDeg = startAngle,
+                direction = direction,
+                side = side,
+            )
+            drawTextAlongPath(
+                measured = measured,
+                path = arcPath,
+                color = color,
+                style = style,
+                alignment = when (alignment) {
+                    ArcAlignment.Start -> TextOnPathAlignment.Start
+                    ArcAlignment.Center -> TextOnPathAlignment.Center
+                    ArcAlignment.End -> TextOnPathAlignment.End
+                },
+                overflow = TextOnPathOverflow.Clip,
+                autoFlip = false,
+                shadow = shadow,
+            )
+        },
+        content = {},
+    )
+}
+
+/**
  * Build a full-circle path of [radiusPx], centred in [size]. Sweep
  * direction follows [direction]; [side] reverses it again so "Inside"
  * text rides the inner edge of the circle (letters keep their natural

@@ -5,17 +5,23 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.mohamedrejeb.harfbuzz.compose.ArcAlignment
 import com.mohamedrejeb.harfbuzz.compose.ArcDirection
 import com.mohamedrejeb.harfbuzz.compose.ArcSide
 import com.mohamedrejeb.harfbuzz.compose.ArcText
+import com.mohamedrejeb.harfbuzz.compose.MeasuredTextLoad
 import com.mohamedrejeb.harfbuzz.compose.rememberHbFont
+import com.mohamedrejeb.harfbuzz.compose.rememberMeasuredText
 import com.mohamedrejeb.harfbuzz.core.HbFace
 import com.mohamedrejeb.harfbuzz.core.HbFont
+import com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy
 import kotlinx.coroutines.runBlocking
+import kotlin.math.PI
 import org.junit.After
 import org.junit.Rule
 import org.junit.Test
@@ -143,6 +149,38 @@ class ArcTextScreenshotTest {
                     color = Color(0xFF14213D),
                     modifier = Modifier.fillMaxSize(),
                 )
+            }
+        }
+    }
+
+    @Test
+    fun `arabic kashida justified to arc length`() {
+        // Pre-justify a short Arabic phrase to the full circumference so
+        // KashidaJustifier elongates joins to fill the ring. The
+        // composable below reads density from `LocalDensity` and feeds
+        // `KashidaTo(targetWidthPx)` so the justification target tracks
+        // whatever the test rule resolves the radius to in pixels.
+        val font = loadFontSynchronously(FontPath.ARABIC_BOLD, 22f)
+        rule.captureGolden("arc_text_arabic_kashida.png") {
+            ArcStage {
+                val radius = 110.dp
+                val density = LocalDensity.current
+                val arcLenPx = with(density) { 2f * PI.toFloat() * radius.toPx() }
+                val loadState by rememberMeasuredText(
+                    text = "نص عربي",
+                    font = font,
+                    justification = JustificationStrategy.KashidaTo(arcLenPx),
+                )
+                val measured = (loadState as? MeasuredTextLoad.Ready)?.measured
+                if (measured != null) {
+                    ArcText(
+                        measured = measured,
+                        radius = radius,
+                        side = ArcSide.Outside,
+                        color = Color(0xFF005F73),
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
     }

@@ -5,6 +5,7 @@ import com.mohamedrejeb.harfbuzz.core.HbFace
 import com.mohamedrejeb.harfbuzz.core.HbFontStack
 import com.mohamedrejeb.harfbuzz.core.HbLanguage
 import com.mohamedrejeb.harfbuzz.core.harfBuzzInit
+import com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy
 import kotlinx.coroutines.runBlocking
 import kotlin.math.abs
 import kotlin.test.AfterTest
@@ -244,6 +245,115 @@ class HorizontalPositionTest {
         assertEquals(0f, measured.horizontalPositionOf(0), tolerance = 1e-3f)
     }
 
+    @Test
+    fun `justified arabic single line keeps original-text indices`() = runBlocking {
+        val text = "نص عربي تجريبي للاختبار"
+        val unjustified = measure(
+            text = text,
+            fontBytes = TestFonts.notoNaskhArabicMedium(),
+            direction = HbDirection.RTL,
+        )
+        val targetWidth = unjustified.advance + 60f
+        val justified = measureWithJustify(
+            text = text,
+            fontBytes = TestFonts.notoNaskhArabicMedium(),
+            direction = HbDirection.RTL,
+            maxWidth = targetWidth,
+            justification = JustificationStrategy.Mixed,
+        )
+
+        // textLength stays in the original-text coordinate space even
+        // though Kashida insertions widened the shaped run.
+        assertEquals(
+            text.length,
+            justified.textLength,
+            "justified textLength must reflect original length",
+        )
+        assertTrue(
+            justified.advance > unjustified.advance,
+            "justification did not fire; advance ${justified.advance} <= unjustified ${unjustified.advance}",
+        )
+
+        // RTL leading edge of charIndex 0 lives at the right of the
+        // line; trailing edge (charIndex == textLength) at the left.
+        assertEquals(
+            justified.advance,
+            justified.horizontalPositionOf(0),
+            tolerance = 1e-3f,
+        )
+        assertEquals(
+            0f,
+            justified.horizontalPositionOf(justified.textLength),
+            tolerance = 1e-3f,
+        )
+
+        // Positions stay non-strictly-decreasing across original chars
+        // (the trim suffix or cluster-internal codepoints can repeat
+        // but never increase).
+        var prev = justified.horizontalPositionOf(0)
+        for (i in 1..justified.textLength) {
+            val current = justified.horizontalPositionOf(i)
+            assertTrue(
+                current <= prev + 1e-3f,
+                "RTL position must not increase: pos($i)=$current pos(${i - 1})=$prev",
+            )
+            prev = current
+        }
+
+        // clusterAt returns original-space indices (every cluster id
+        // must be a valid original-char offset). Summing per-original
+        // advances equals the un-justified advance (Kashida-only
+        // shaped clusters are not attributed to any original char).
+        var summed = 0f
+        for (i in 0 until justified.textLength) {
+            val cluster = justified.clusterAt(i)
+            assertNotNull(cluster, "cluster missing at original index $i")
+            assertTrue(
+                cluster in 0 until justified.textLength,
+                "cluster $cluster outside original range at index $i",
+            )
+            summed += justified.advanceWidthOf(i)
+        }
+        assertEquals(
+            unjustified.advance,
+            summed,
+            tolerance = 1e-3f,
+            message = "summed original-char advances must equal un-justified advance",
+        )
+    }
+
+    @Test
+    fun `justification with no slack returns identity-mapped result`() = runBlocking {
+        // When the un-justified advance already meets the target width
+        // there is nothing to insert; buildMeasuredTextWithJustify must
+        // bail out and return the original shape (no mapping attached).
+        val text = "نص عربي"
+        val initial = measure(
+            text = text,
+            fontBytes = TestFonts.notoNaskhArabicMedium(),
+            direction = HbDirection.RTL,
+        )
+        val justified = measureWithJustify(
+            text = text,
+            fontBytes = TestFonts.notoNaskhArabicMedium(),
+            direction = HbDirection.RTL,
+            maxWidth = initial.advance, // no slack
+            justification = JustificationStrategy.Mixed,
+        )
+
+        assertEquals(text.length, justified.textLength)
+        assertEquals(initial.advance, justified.advance, tolerance = 1e-3f)
+        // Positions must match the un-justified shape exactly.
+        for (i in 0..text.length) {
+            assertEquals(
+                initial.horizontalPositionOf(i),
+                justified.horizontalPositionOf(i),
+                tolerance = 1e-3f,
+                message = "no-slack pos parity at $i",
+            )
+        }
+    }
+
     private suspend fun measure(
         text: String,
         fontBytes: ByteArray,
@@ -263,6 +373,32 @@ class HorizontalPositionTest {
             features = emptyList(),
             direction = direction,
             language = HbLanguage.AUTO,
+        )
+    }
+
+    private suspend fun measureWithJustify(
+        text: String,
+        fontBytes: ByteArray,
+        sizePx: Float = 24f,
+        direction: HbDirection = HbDirection.AUTO,
+        maxWidth: Float,
+        justification: JustificationStrategy,
+    ): MeasuredText {
+        harfBuzzInit()
+        val face = HbFace.fromBytes(fontBytes)
+        val font = face.toFont(sizePx)
+        openHandles.add(font)
+        openHandles.add(face)
+        val stack = HbFontStack(font)
+        clearMeasuredTextCacheForTest()
+        return buildMeasuredTextWithJustify(
+            text = text,
+            fontStack = stack,
+            features = emptyList(),
+            direction = direction,
+            language = HbLanguage.AUTO,
+            maxWidth = maxWidth,
+            justification = justification,
         )
     }
 }

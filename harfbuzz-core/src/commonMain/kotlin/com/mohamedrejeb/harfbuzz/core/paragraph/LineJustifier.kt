@@ -66,22 +66,24 @@ public object LineJustifier {
             )
             buildResult(text, r.justifiedText, r.originalToJustifiedIndex)
         }
-        JustificationStrategy.Mixed -> if (ArabicTextUtils.isArabicText(text)) {
-            val r = KashidaJustifier.justifyArabicLine(
-                text = text,
-                currentWidth = currentWidth,
-                targetWidth = targetWidth,
-                kashidaGlyphWidth = kashidaGlyphWidth,
-            )
-            buildResult(text, r.justifiedText, r.originalToJustifiedIndex)
-        } else {
-            val r = WordSpacingJustifier.justifyLine(
-                text = text,
-                currentWidth = currentWidth,
-                targetWidth = targetWidth,
-                thinSpaceWidth = thinSpaceWidth,
-            )
-            buildResult(text, r.justifiedText, r.originalToJustifiedIndex)
+        JustificationStrategy.Mixed, is JustificationStrategy.KashidaTo -> {
+            if (ArabicTextUtils.isArabicText(text)) {
+                val r = KashidaJustifier.justifyArabicLine(
+                    text = text,
+                    currentWidth = currentWidth,
+                    targetWidth = targetWidth,
+                    kashidaGlyphWidth = kashidaGlyphWidth,
+                )
+                buildResult(text, r.justifiedText, r.originalToJustifiedIndex)
+            } else {
+                val r = WordSpacingJustifier.justifyLine(
+                    text = text,
+                    currentWidth = currentWidth,
+                    targetWidth = targetWidth,
+                    thinSpaceWidth = thinSpaceWidth,
+                )
+                buildResult(text, r.justifiedText, r.originalToJustifiedIndex)
+            }
         }
     }
 
