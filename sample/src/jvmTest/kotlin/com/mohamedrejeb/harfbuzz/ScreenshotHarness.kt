@@ -136,8 +136,12 @@ private fun comparePngs(goldenBytes: ByteArray, capturedBytes: ByteArray, tolera
     if (golden.width != captured.width || golden.height != captured.height) {
         return Int.MAX_VALUE
     }
-    val gPixels = golden.peekPixels()?.buffer?.bytes ?: return Int.MAX_VALUE
-    val cPixels = captured.peekPixels()?.buffer?.bytes ?: return Int.MAX_VALUE
+    // peekPixels returns null when the decoded image isn't backed by a
+    // CPU-readable raster (e.g. when Skia keeps it in a lazy / encoded
+    // form). Fall back to AWT BufferedImage decoding which always
+    // produces a raster we can read directly.
+    val gPixels = readArgbBytes(goldenBytes) ?: return Int.MAX_VALUE
+    val cPixels = readArgbBytes(capturedBytes) ?: return Int.MAX_VALUE
     if (gPixels.size != cPixels.size) return Int.MAX_VALUE
 
     var diffPixels = 0
@@ -153,6 +157,33 @@ private fun comparePngs(goldenBytes: ByteArray, capturedBytes: ByteArray, tolera
     val totalPixels = (gPixels.size / 4)
     val ratio = diffPixels.toDouble() / totalPixels
     return if (ratio > tolerance) diffPixels else null
+}
+
+/**
+ * Decode [bytes] as a PNG via AWT and pull the pixel data as flat
+ * RGBA8888. Returns `null` if AWT can't decode the image at all - any
+ * other failure (truncated image, exotic colour profile) bubbles up
+ * intentionally so the harness fails loud rather than silently passing
+ * a bad capture.
+ */
+private fun readArgbBytes(bytes: ByteArray): ByteArray? {
+    val img = ImageIO.read(java.io.ByteArrayInputStream(bytes)) ?: return null
+    val w = img.width
+    val h = img.height
+    val rgb = IntArray(w * h)
+    img.getRGB(0, 0, w, h, rgb, 0, w)
+    val out = ByteArray(rgb.size * 4)
+    for (i in rgb.indices) {
+        val argb = rgb[i]
+        // BufferedImage.getRGB returns ARGB ints regardless of the
+        // image's stored colour model. Convert to RGBA8888 to match
+        // what the comparison loop expects.
+        out[i * 4] = ((argb shr 16) and 0xFF).toByte()
+        out[i * 4 + 1] = ((argb shr 8) and 0xFF).toByte()
+        out[i * 4 + 2] = (argb and 0xFF).toByte()
+        out[i * 4 + 3] = ((argb shr 24) and 0xFF).toByte()
+    }
+    return out
 }
 
 /** Convenience to construct the test rule from harness imports. */
