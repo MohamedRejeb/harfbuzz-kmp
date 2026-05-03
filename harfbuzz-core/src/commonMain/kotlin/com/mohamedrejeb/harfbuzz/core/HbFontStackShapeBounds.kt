@@ -17,17 +17,19 @@ package com.mohamedrejeb.harfbuzz.core
  */
 public suspend fun HbFontStack.shapeOnlyBounds(
     text: String,
+    sizePx: Float,
     baseDirection: HbDirection = HbDirection.AUTO,
     features: List<HbFeature> = emptyList(),
     language: HbLanguage = HbLanguage.AUTO,
 ): MeasuredBoundsResult {
-    val paragraph = shapeParagraph(text, baseDirection, features, language)
+    val paragraph = shapeParagraph(text, sizePx, baseDirection, features, language)
 
-    // Mirror the fallback rule from RememberMeasuredText.kt:163-165 so the
-    // metrics here match what MeasuredText would compute.
-    val ext = runCatching { primary.hExtents }.getOrNull()
-    val ascent = ext?.ascender ?: (primary.pointSize * 0.8f)
-    val descent = ext?.let { -it.descender } ?: (primary.pointSize * 0.2f)
+    // Mirror the fallback rule from RememberMeasuredText.kt so the metrics
+    // here match what MeasuredText would compute when the primary face
+    // doesn't expose horizontal extents.
+    val ext = runCatching { primary.hExtents(sizePx) }.getOrNull()
+    val ascent = ext?.ascender ?: (sizePx * 0.8f)
+    val descent = ext?.let { -it.descender } ?: (sizePx * 0.2f)
     val lineGap = ext?.lineGap ?: 0f
     val baseline = ascent
 

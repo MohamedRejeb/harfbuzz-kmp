@@ -7,11 +7,25 @@ import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toAwtImage
+import com.mohamedrejeb.harfbuzz.core.HbFont
 import org.jetbrains.skia.EncodedImageFormat
 import org.jetbrains.skia.Image
 import java.io.File
 import javax.imageio.ImageIO
 import kotlin.math.abs
+
+/**
+ * Pairs an [HbFont] with the pixel size a screenshot test wants to
+ * shape and render at. Fonts are sizeless, so each test bundles its
+ * size alongside the font handle so the test bodies destructure once
+ * and read both fields naturally:
+ *
+ * ```
+ * val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 32f)
+ * ShapedText(text = "...", font = font, sizePx = sizePx)
+ * ```
+ */
+internal data class SizedFont(val font: HbFont, val sizePx: Float)
 
 /**
  * Screenshot-test harness for Compose Multiplatform Desktop.

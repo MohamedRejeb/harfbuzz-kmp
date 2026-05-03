@@ -21,7 +21,7 @@ class ParagraphLayoutJvmTest {
     @Test
     fun empty_text_returns_empty_paragraph() = runBlocking {
         withRoboto { stack ->
-            val laid = stack.layoutParagraph("", maxWidth = 200f)
+            val laid = stack.layoutParagraph("", sizePx = SIZE_PX, maxWidth = 200f)
             assertTrue(laid.isEmpty)
             assertEquals(0, laid.lineCount)
             assertEquals(0f, laid.height)
@@ -31,7 +31,7 @@ class ParagraphLayoutJvmTest {
     @Test
     fun zero_max_width_returns_empty_paragraph() = runBlocking {
         withRoboto { stack ->
-            val laid = stack.layoutParagraph("Hello", maxWidth = 0f)
+            val laid = stack.layoutParagraph("Hello", sizePx = SIZE_PX, maxWidth = 0f)
             assertTrue(laid.isEmpty)
         }
     }
@@ -39,7 +39,7 @@ class ParagraphLayoutJvmTest {
     @Test
     fun single_word_fits_in_one_line() = runBlocking {
         withRoboto { stack ->
-            val laid = stack.layoutParagraph("Hello", maxWidth = 1000f)
+            val laid = stack.layoutParagraph("Hello", sizePx = SIZE_PX, maxWidth = 1000f)
             assertEquals(1, laid.lineCount)
             assertEquals(0 until 5, laid.lines[0].charRange)
             assertTrue(laid.width > 0f)
@@ -51,7 +51,7 @@ class ParagraphLayoutJvmTest {
     fun long_paragraph_wraps_to_multiple_lines() = runBlocking {
         withRoboto { stack ->
             val text = "The quick brown fox jumps over the lazy dog"
-            val laid = stack.layoutParagraph(text, maxWidth = 200f)
+            val laid = stack.layoutParagraph(text, sizePx = SIZE_PX, maxWidth = 200f)
             assertTrue(laid.lineCount > 1, "expected wrap, got ${laid.lineCount} lines")
             // Every line's advance must fit the budget. At 32pt Roboto
             // the longest single word ("jumps") is well under 200px so
@@ -71,7 +71,7 @@ class ParagraphLayoutJvmTest {
     fun hard_break_forces_new_line_even_when_room_remains() = runBlocking {
         withRoboto { stack ->
             val text = "a\nb"
-            val laid = stack.layoutParagraph(text, maxWidth = 1000f)
+            val laid = stack.layoutParagraph(text, sizePx = SIZE_PX, maxWidth = 1000f)
             assertEquals(2, laid.lineCount, "expected hard break to split, got ${laid.lineCount}")
         }
     }
@@ -80,7 +80,7 @@ class ParagraphLayoutJvmTest {
     fun consecutive_newlines_yield_empty_middle_lines() = runBlocking {
         withRoboto { stack ->
             val text = "a\n\nb"
-            val laid = stack.layoutParagraph(text, maxWidth = 1000f)
+            val laid = stack.layoutParagraph(text, sizePx = SIZE_PX, maxWidth = 1000f)
             assertEquals(3, laid.lineCount, "expected 3 lines for \"a\\n\\nb\", got ${laid.lineCount}")
         }
     }
@@ -90,6 +90,7 @@ class ParagraphLayoutJvmTest {
         withRoboto { stack ->
             val laid = stack.layoutParagraph(
                 "one two three four five six seven eight nine ten",
+                sizePx = SIZE_PX,
                 maxWidth = 80f,
                 lineSpacing = 12f,
             )
@@ -106,7 +107,7 @@ class ParagraphLayoutJvmTest {
     @Test
     fun firstBaseline_equals_first_line_ascent() = runBlocking {
         withRoboto { stack ->
-            val laid = stack.layoutParagraph("Hello", maxWidth = 1000f)
+            val laid = stack.layoutParagraph("Hello", sizePx = SIZE_PX, maxWidth = 1000f)
             assertEquals(laid.lines[0].ascent, laid.firstBaseline)
         }
     }
@@ -116,6 +117,7 @@ class ParagraphLayoutJvmTest {
         withRoboto { stack ->
             val laid = stack.layoutParagraph(
                 "Hello world",
+                sizePx = SIZE_PX,
                 maxWidth = 400f,
                 alignment = ParagraphAlignment.Center,
             )
@@ -133,6 +135,7 @@ class ParagraphLayoutJvmTest {
         withRoboto { stack ->
             val laid = stack.layoutParagraph(
                 "Hello",
+                sizePx = SIZE_PX,
                 maxWidth = 400f,
                 alignment = ParagraphAlignment.Right,
             )
@@ -153,6 +156,7 @@ class ParagraphLayoutJvmTest {
         withRoboto { stack ->
             val laid = stack.layoutParagraph(
                 "Hello",
+                sizePx = SIZE_PX,
                 maxWidth = 400f,
                 alignment = ParagraphAlignment.Start,
             )
@@ -173,6 +177,7 @@ class ParagraphLayoutJvmTest {
         withRoboto { stack ->
             val laid = stack.layoutParagraph(
                 "one two three four five six seven eight",
+                sizePx = SIZE_PX,
                 maxWidth = 80f,
                 lineSpacing = 4f,
             )
@@ -191,7 +196,7 @@ class ParagraphLayoutJvmTest {
     fun width_is_max_line_advance() = runBlocking {
         withRoboto { stack ->
             val text = "one two three four five six seven eight"
-            val laid = stack.layoutParagraph(text, maxWidth = 100f)
+            val laid = stack.layoutParagraph(text, sizePx = SIZE_PX, maxWidth = 100f)
             require(laid.lineCount >= 2)
             val maxAdvance = laid.lines.maxOf { it.advance }
             assertEquals(maxAdvance, laid.width)
@@ -202,10 +207,11 @@ class ParagraphLayoutJvmTest {
     fun arabic_rtl_start_alignment_pushes_to_right_edge() = runBlocking {
         val arabicBytes = loadSystemArabicFont() ?: return@runBlocking
         HbFace.from { bytes(arabicBytes) }.use { face ->
-            face.toFont(32f).use { font ->
+            face.toFont().use { font ->
                 val stack = HbFontStack(font)
                 val laid = stack.layoutParagraph(
                     "نص عربي",
+                    sizePx = SIZE_PX,
                     maxWidth = 400f,
                     alignment = ParagraphAlignment.Start,
                 )
@@ -228,10 +234,10 @@ class ParagraphLayoutJvmTest {
     fun arabic_wraps_at_word_boundaries() = runBlocking {
         val arabicBytes = loadSystemArabicFont() ?: return@runBlocking
         HbFace.from { bytes(arabicBytes) }.use { face ->
-            face.toFont(24f).use { font ->
+            face.toFont().use { font ->
                 val stack = HbFontStack(font)
                 val text = "نص عربي تجريبي طويل لاختبار التفاف الأسطر"
-                val laid = stack.layoutParagraph(text, maxWidth = 80f)
+                val laid = stack.layoutParagraph(text, sizePx = 24f, maxWidth = 80f)
                 assertTrue(laid.lineCount >= 2, "expected Arabic wrap, got ${laid.lineCount} lines")
                 // Total char coverage spans the whole text.
                 assertEquals(0, laid.lines.first().charRange.first)
@@ -250,9 +256,13 @@ class ParagraphLayoutJvmTest {
     private suspend inline fun withRoboto(block: (HbFontStack) -> Unit) {
         val bytes = TestFonts.robotoRegular()
         HbFace.from { bytes(bytes) }.use { face ->
-            face.toFont(32f).use { font ->
+            face.toFont().use { font ->
                 block(HbFontStack(font))
             }
         }
+    }
+
+    private companion object {
+        const val SIZE_PX = 32f
     }
 }

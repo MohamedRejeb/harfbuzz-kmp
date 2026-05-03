@@ -43,7 +43,7 @@ class JvmSystemFontResolverTest {
     @Test
     fun `Arabic codepoint resolves through Noto Naskh`() = runBlocking {
         // U+0644 ARABIC LETTER LAM - Roboto has no Arabic glyphs.
-        val font = resolver.fontFor(codepoint = 0x0644, pointSize = 24f)
+        val font = resolver.fontFor(codepoint = 0x0644)
         assertNotNull(font, "expected an Arabic-capable font in the curated list")
         assertTrue(font.glyphIdForCodepoint(0x0644) != 0, "resolved font must actually cover the codepoint")
     }
@@ -52,15 +52,15 @@ class JvmSystemFontResolverTest {
     fun `emoji codepoint resolves through emoji font when available`() = runBlocking {
         if (curated.none { it.name.contains("Emoji", ignoreCase = true) }) return@runBlocking
         // U+1F600 GRINNING FACE - neither Roboto nor Noto Naskh covers this.
-        val font = resolver.fontFor(codepoint = 0x1F600, pointSize = 24f)
+        val font = resolver.fontFor(codepoint = 0x1F600)
         assertNotNull(font, "expected an emoji-capable font in the curated list")
         assertTrue(font.glyphIdForCodepoint(0x1F600) != 0)
     }
 
     @Test
     fun `repeat query for the same codepoint returns the cached font`() = runBlocking {
-        val first = resolver.fontFor(codepoint = 0x0644, pointSize = 24f)
-        val second = resolver.fontFor(codepoint = 0x0644, pointSize = 24f)
+        val first = resolver.fontFor(codepoint = 0x0644)
+        val second = resolver.fontFor(codepoint = 0x0644)
         assertSame(first, second, "resolver must cache the resolved font")
     }
 
@@ -69,8 +69,8 @@ class JvmSystemFontResolverTest {
         // A codepoint in a Plane 15 (private use) range no font in our
         // curated list covers - we expect null both first and repeat.
         val cp = 0xF8FF
-        val first = resolver.fontFor(codepoint = cp, pointSize = 24f)
-        val second = resolver.fontFor(codepoint = cp, pointSize = 24f)
+        val first = resolver.fontFor(codepoint = cp)
+        val second = resolver.fontFor(codepoint = cp)
         assertNull(first, "Apple Logo PUA codepoint should not resolve from our curated test list")
         assertNull(second, "negative cache must hold across queries")
     }
@@ -78,7 +78,7 @@ class JvmSystemFontResolverTest {
     @Test
     fun `close releases all loaded faces and clears caches`() = runBlocking {
         // Force at least one font to load.
-        resolver.fontFor(codepoint = 0x0644, pointSize = 24f)
+        resolver.fontFor(codepoint = 0x0644)
         resolver.close()
         // After close, the resolver should be safe to interact with - a
         // second close is a no-op and we don't crash on internal state.
@@ -86,17 +86,10 @@ class JvmSystemFontResolverTest {
     }
 
     @Test
-    fun `point size hint applies to the resolved font`() = runBlocking {
-        val font = resolver.fontFor(codepoint = 0x0644, pointSize = 48f)
-        assertNotNull(font)
-        assertEquals(48f, font.pointSize, "resolver must size resolved fonts to the requested point size")
-    }
-
-    @Test
     fun `empty curated list resolves nothing`() = runBlocking {
         val empty = JvmSystemFontResolver(SystemFallback.Match(), candidatePaths = emptyList())
         try {
-            assertNull(empty.fontFor(codepoint = 0x0061, pointSize = 16f))
+            assertNull(empty.fontFor(codepoint = 0x0061))
         } finally {
             empty.close()
         }
@@ -116,7 +109,7 @@ class JvmSystemFontResolverTest {
             candidatePaths = curated,
         )
         try {
-            val font = biased.fontFor(codepoint = 0x1F600, pointSize = 24f)
+            val font = biased.fontFor(codepoint = 0x1F600)
             assertNotNull(font)
             // Confirm the resolved font has a color glyph table - that's
             // what the bias should select on an emoji codepoint.
@@ -143,7 +136,7 @@ class JvmSystemFontResolverTest {
             // Ambiguous codepoint: U+0020 SPACE - covered by every text
             // font. With language=ar, the Arabic-tagged font should
             // come back ahead of Roboto (no language tag).
-            val space = biased.fontFor(codepoint = 0x0020, pointSize = 16f)
+            val space = biased.fontFor(codepoint = 0x0020)
             assertNotNull(space)
             // We can't assert on font identity without exposing it, but
             // the call returning non-null confirms ranking didn't
@@ -164,7 +157,7 @@ class JvmSystemFontResolverTest {
             candidatePaths = curated,
         )
         try {
-            val font = biased.fontFor(codepoint = 'a'.code, pointSize = 24f)
+            val font = biased.fontFor(codepoint = 'a'.code)
             assertNotNull(font, "Latin 'a' should resolve from any font in the curated list")
         } finally {
             biased.close()

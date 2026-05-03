@@ -34,7 +34,7 @@ class ColorPaintSmokeTest {
                 "ArefRuqaaInk should advertise a COLR v1 paint table",
             )
 
-            face.toFont(64f).use { font ->
+            face.toFont().use { font ->
                 // Pick the first non-zero glyph id from a representative shape.
                 // Any ink-styled Arabic letter has paint content; "ب" gives a
                 // dotted glyph that exercises multiple paint layers.
@@ -42,13 +42,13 @@ class ColorPaintSmokeTest {
                     buf.text = "ب"
                     buf.direction = HbDirection.RTL
                     buf.script = HbScript.ARABIC
-                    val run = font.shape(buf)
+                    val run = font.shape(buf, sizePx = 64f)
                     run.glyphs.firstOrNull { it.glyphId != 0 }?.glyphId
                 }
                 assertNotNull(glyphId, "expected at least one shaped glyph")
 
                 val sink = RecordingPaintSink()
-                font.paintGlyph(glyphId, foreground = 0xFF000000.toInt(), sink = sink)
+                font.paintGlyph(glyphId, sizePx = 64f, foreground = 0xFF000000.toInt(), sink = sink)
 
                 assertTrue(
                     sink.ops.isNotEmpty(),
@@ -98,12 +98,12 @@ class ColorPaintSmokeTest {
                 face.hasColorSvg(),
                 "ArefRuqaaInk ships an SVG-in-OT table",
             )
-            face.toFont(64f).use { font ->
+            face.toFont().use { font ->
                 val glyphId = HbBuffer().use { buf ->
                     buf.text = "ب"
                     buf.direction = HbDirection.RTL
                     buf.script = HbScript.ARABIC
-                    font.shape(buf).glyphs.firstOrNull { it.glyphId != 0 }?.glyphId
+                    font.shape(buf, sizePx = 64f).glyphs.firstOrNull { it.glyphId != 0 }?.glyphId
                 }
                 assertNotNull(glyphId, "expected at least one shaped glyph")
 

@@ -67,12 +67,12 @@ internal class IosSystemFontResolver(
 
     private class Loaded(val face: HbFace) {
         /**
-         * Per-pointSize fonts minted on demand. Each size gets its own
-         * immutable [HbFont] so callers holding earlier references keep
-         * their original metrics - a later resolve at a different size
-         * doesn't silently retroactively rescale their shaped runs.
+         * Single sizeless [HbFont] minted on first cover-walk and reused
+         * for every subsequent resolve against this face. HbFont is now
+         * sizeless so the same instance shapes at any caller-supplied
+         * sizePx.
          */
-        val fontsBySize: HashMap<Float, HbFont> = HashMap()
+        var sizelessFont: HbFont? = null
     }
 
     private val resolved: HashMap<Int, Loaded?> = HashMap()
@@ -108,14 +108,10 @@ internal class IosSystemFontResolver(
         }
     }
 
-    override suspend fun fontFor(codepoint: Int, pointSize: Float): HbFont? {
+    override suspend fun fontFor(codepoint: Int): HbFont? {
         if (resolved.containsKey(codepoint)) {
-            // Cache hit - same Loaded as before; mint or reuse the
-            // pointSize-specific font. Caching by Loaded (not by HbFont)
-            // means a later call at a different size mints a fresh font
-            // without touching the previous one - caller refs stay valid.
             val cached = resolved[codepoint] ?: return null
-            return sized(cached, pointSize)
+            return sizelessFont(cached)
         }
         val base = baseFont ?: run {
             resolved[codepoint] = null
@@ -148,17 +144,17 @@ internal class IosSystemFontResolver(
                     resolved[codepoint] = null
                     return null
                 }
-                val sizedFont = sized(loaded, pointSize)
+                val font = sizelessFont(loaded)
 
                 // Sanity check - CoreText sometimes returns the base when
                 // nothing covers, in which case our HbFont still fails to
                 // resolve. Cache null in that case.
-                if (sizedFont.glyphIdForCodepoint(codepoint) == 0) {
+                if (font.glyphIdForCodepoint(codepoint) == 0) {
                     resolved[codepoint] = null
                     return null
                 }
                 resolved[codepoint] = loaded
-                return sizedFont
+                return font
             } finally {
                 CFRelease(matched)
             }
@@ -167,10 +163,10 @@ internal class IosSystemFontResolver(
         }
     }
 
-    private suspend fun sized(l: Loaded, pointSize: Float): HbFont {
-        l.fontsBySize[pointSize]?.let { return it }
-        val font = l.face.toFont(pointSize)
-        l.fontsBySize[pointSize] = font
+    private suspend fun sizelessFont(l: Loaded): HbFont {
+        l.sizelessFont?.let { return it }
+        val font = l.face.toFont()
+        l.sizelessFont = font
         return font
     }
 
@@ -214,8 +210,8 @@ internal class IosSystemFontResolver(
 
     override fun close() {
         for (l in byPath.values) {
-            for (font in l.fontsBySize.values) runCatching { font.close() }
-            l.fontsBySize.clear()
+            l.sizelessFont?.let { runCatching { it.close() } }
+            l.sizelessFont = null
             runCatching { l.face.close() }
         }
         byPath.clear()

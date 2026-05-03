@@ -100,12 +100,12 @@ internal class AndroidSystemFontResolver(
         val hasColor: Boolean,
     ) {
         /**
-         * Per-pointSize fonts minted on demand. Each size gets its own
-         * immutable [HbFont] so callers holding earlier references keep
-         * their original metrics - a later resolve at a different size
-         * doesn't silently retroactively rescale their shaped runs.
+         * Single sizeless [HbFont] minted on first cover-walk and reused
+         * for every subsequent resolve against this face. HbFont is now
+         * sizeless so the same instance shapes at any caller-supplied
+         * sizePx.
          */
-        val fontsBySize: HashMap<Float, HbFont> = HashMap()
+        var sizelessFont: HbFont? = null
     }
 
     /** Pre-ranked metadata queue; `pending[0]` is the best candidate to try first. */
@@ -189,16 +189,12 @@ internal class AndroidSystemFontResolver(
     private fun key(codepoint: Int, italic: Boolean): Long =
         (codepoint.toLong() and 0xFFFFFFFFL) or (if (italic) 1L shl 32 else 0L)
 
-    override suspend fun fontFor(codepoint: Int, pointSize: Float): HbFont? {
+    override suspend fun fontFor(codepoint: Int): HbFont? {
         val italic = style.italic
         val cacheKey = key(codepoint, italic)
         if (resolved.containsKey(cacheKey)) {
-            // Cache hit - same Loaded as before; mint or reuse the
-            // pointSize-specific font. Caching by Loaded (not by HbFont)
-            // means a later call at a different size mints a fresh font
-            // without touching the previous one - caller refs stay valid.
             val cached = resolved[cacheKey] ?: return null
-            return sized(cached, pointSize)
+            return sizelessFont(cached)
         }
 
         // First-call seeding of the EmojiCompat-bundled font (if any). Done
@@ -218,14 +214,14 @@ internal class AndroidSystemFontResolver(
             if (preferColor) rankLoadedPreferColor else rankLoadedPlain,
         )
         for (l in orderedLoaded) {
-            val sizedFont = sized(l, pointSize)
-            if (sizedFont.glyphIdForCodepoint(codepoint) != 0) {
+            val font = sizelessFont(l)
+            if (font.glyphIdForCodepoint(codepoint) != 0) {
                 if (!preferColor || l.hasColor) {
                     resolved[cacheKey] = l
-                    return sizedFont
+                    return font
                 }
                 // Mono cover with color preference: hold it and keep looking.
-                val firstCover = drainPendingForColorCover(codepoint, italic, pointSize, scriptHints, l, sizedFont)
+                val firstCover = drainPendingForColorCover(codepoint, scriptHints, l, font)
                 resolved[cacheKey] = firstCover.first
                 return firstCover.second
             }
@@ -236,13 +232,13 @@ internal class AndroidSystemFontResolver(
         while (pending.isNotEmpty()) {
             val meta = pickNextPending(scriptHints) ?: break
             val l = tryLoad(meta) ?: continue
-            val sizedFont = sized(l, pointSize)
-            if (sizedFont.glyphIdForCodepoint(codepoint) != 0) {
+            val font = sizelessFont(l)
+            if (font.glyphIdForCodepoint(codepoint) != 0) {
                 if (!preferColor || l.hasColor) {
                     resolved[cacheKey] = l
-                    return sizedFont
+                    return font
                 }
-                val firstCover = drainPendingForColorCover(codepoint, italic, pointSize, scriptHints, l, sizedFont)
+                val firstCover = drainPendingForColorCover(codepoint, scriptHints, l, font)
                 resolved[cacheKey] = firstCover.first
                 return firstCover.second
             }
@@ -284,10 +280,10 @@ internal class AndroidSystemFontResolver(
      * fall back to the top-N pre-ranked entries - same files the
      * cover walk would otherwise probe sequentially.
      */
-    override suspend fun prewarm(codepoints: IntArray, pointSize: Float) {
+    override suspend fun prewarm(codepoints: IntArray) {
         val predicted = predictMetasForPrewarm(codepoints)
         if (predicted.isEmpty()) {
-            for (cp in codepoints) fontFor(cp, pointSize)
+            for (cp in codepoints) fontFor(cp)
             return
         }
         // Parallel load: each candidate runs its file read + `HbFace.from`
@@ -320,7 +316,7 @@ internal class AndroidSystemFontResolver(
         // codepoints now hit the parallel-loaded faces in `loaded`
         // first; only codepoints whose cover wasn't predicted fall
         // through to the (now smaller) `pending` queue.
-        for (cp in codepoints) fontFor(cp, pointSize)
+        for (cp in codepoints) fontFor(cp)
     }
 
     /**
@@ -453,8 +449,6 @@ internal class AndroidSystemFontResolver(
      */
     private suspend fun drainPendingForColorCover(
         codepoint: Int,
-        italic: Boolean,
-        pointSize: Float,
         scriptHints: Set<String>?,
         firstCoverLoaded: Loaded,
         firstCoverFont: HbFont,
@@ -462,16 +456,16 @@ internal class AndroidSystemFontResolver(
         while (pending.isNotEmpty()) {
             val next = pickNextPending(scriptHints) ?: break
             val l = tryLoad(next) ?: continue
-            val sizedFont = sized(l, pointSize)
-            if (sizedFont.glyphIdForCodepoint(codepoint) != 0 && l.hasColor) return l to sizedFont
+            val font = sizelessFont(l)
+            if (font.glyphIdForCodepoint(codepoint) != 0 && l.hasColor) return l to font
         }
         return firstCoverLoaded to firstCoverFont
     }
 
-    private suspend fun sized(l: Loaded, pointSize: Float): HbFont {
-        l.fontsBySize[pointSize]?.let { return it }
-        val font = l.face.toFont(pointSize)
-        l.fontsBySize[pointSize] = font
+    private suspend fun sizelessFont(l: Loaded): HbFont {
+        l.sizelessFont?.let { return it }
+        val font = l.face.toFont()
+        l.sizelessFont = font
         return font
     }
 
@@ -494,8 +488,8 @@ internal class AndroidSystemFontResolver(
 
     override fun close() {
         for (l in loaded) {
-            for (font in l.fontsBySize.values) runCatching { font.close() }
-            l.fontsBySize.clear()
+            l.sizelessFont?.let { runCatching { it.close() } }
+            l.sizelessFont = null
             runCatching { l.face.close() }
         }
         loaded.clear()

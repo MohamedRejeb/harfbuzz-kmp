@@ -41,6 +41,7 @@ import kotlin.coroutines.cancellation.CancellationException
 public fun rememberMeasuredText(
     text: String,
     font: HbFont,
+    sizePx: Float,
     features: List<HbFeature> = emptyList(),
     direction: HbDirection = HbDirection.AUTO,
     language: HbLanguage = HbLanguage.AUTO,
@@ -48,7 +49,7 @@ public fun rememberMeasuredText(
     justification: JustificationStrategy = JustificationStrategy.None,
 ): State<MeasuredTextLoad> {
     val stack = remember(font) { HbFontStack(font) }
-    return rememberMeasuredText(text, stack, features, direction, language, maxWidth, justification)
+    return rememberMeasuredText(text, stack, sizePx, features, direction, language, maxWidth, justification)
 }
 
 /**
@@ -68,6 +69,7 @@ public fun rememberMeasuredText(
 public fun rememberMeasuredText(
     text: String,
     fontStack: HbFontStack,
+    sizePx: Float,
     features: List<HbFeature> = emptyList(),
     direction: HbDirection = HbDirection.AUTO,
     language: HbLanguage = HbLanguage.AUTO,
@@ -76,12 +78,12 @@ public fun rememberMeasuredText(
 ): State<MeasuredTextLoad> {
     return produceState<MeasuredTextLoad>(
         initialValue = MeasuredTextLoad.Loading,
-        text, fontStack, features, direction, language, maxWidth, justification,
+        text, fontStack, sizePx, features, direction, language, maxWidth, justification,
     ) {
         value = MeasuredTextLoad.Loading
         try {
             val measured = buildMeasuredTextWithJustify(
-                text, fontStack, features, direction, language, maxWidth, justification,
+                text, fontStack, sizePx, features, direction, language, maxWidth, justification,
             )
             value = MeasuredTextLoad.Ready(measured)
         } catch (ce: CancellationException) {
@@ -117,13 +119,14 @@ public fun rememberMeasuredText(
 internal suspend fun buildMeasuredTextWithJustify(
     text: String,
     fontStack: HbFontStack,
+    sizePx: Float,
     features: List<HbFeature>,
     direction: HbDirection,
     language: HbLanguage,
     maxWidth: Float,
     justification: JustificationStrategy,
 ): MeasuredText {
-    val initial = buildMeasuredText(text, fontStack, features, direction, language)
+    val initial = buildMeasuredText(text, fontStack, sizePx, features, direction, language)
     val targetWidth = when (justification) {
         is JustificationStrategy.KashidaTo -> justification.targetWidthPx
         else -> maxWidth
@@ -140,11 +143,11 @@ internal suspend fun buildMeasuredTextWithJustify(
         justification is JustificationStrategy.KashidaTo
     val kashidaWidth = if (needsKashidaWidth) {
         fontStack.shapeParagraph(
-            ArabicTextUtils.KASHIDA.toString(), direction, features, language,
+            ArabicTextUtils.KASHIDA.toString(), sizePx, direction, features, language,
         ).totalAdvance
     } else 0f
     val thinSpaceWidth = fontStack.shapeParagraph(
-        WordSpacingJustifier.THIN_SPACE.toString(), direction, features, language,
+        WordSpacingJustifier.THIN_SPACE.toString(), sizePx, direction, features, language,
     ).totalAdvance
 
     val justified = LineJustifier.justify(
@@ -157,7 +160,7 @@ internal suspend fun buildMeasuredTextWithJustify(
     )
     if (justified.justifiedText.length == text.length) return initial
     val shaped = buildMeasuredText(
-        justified.justifiedText, fontStack, features, direction, language,
+        justified.justifiedText, fontStack, sizePx, features, direction, language,
     )
     val mapping = justified.originalToJustifiedIndex ?: return shaped
     return shaped.withOriginalMapping(originalTextLength = text.length, mapping = mapping)
@@ -169,6 +172,7 @@ private fun isStaleHbHandle(cause: Throwable): Boolean =
 internal suspend fun buildMeasuredText(
     text: String,
     fontStack: HbFontStack,
+    sizePx: Float,
     features: List<HbFeature>,
     direction: HbDirection,
     language: HbLanguage,
@@ -177,9 +181,9 @@ internal suspend fun buildMeasuredText(
     // intentionally excludes paint-only props (color, alpha, shadow) so
     // animating them never invalidates the entry. See [MeasuredTextCache]
     // for the workloads this catches.
-    val cacheKey = measureKeyOf(text, fontStack, features, direction, language)
+    val cacheKey = measureKeyOf(text, fontStack, sizePx, features, direction, language)
     MeasuredTextCache.get(cacheKey)?.let { return it }
-    val measured = buildMeasuredTextUncached(text, fontStack, features, direction, language)
+    val measured = buildMeasuredTextUncached(text, fontStack, sizePx, features, direction, language)
     // Empty-text builds skip the cache: there's nothing to amortise and an
     // empty entry per (fontStack, features, ...) tuple would just pollute
     // the working set.
@@ -190,15 +194,17 @@ internal suspend fun buildMeasuredText(
 private suspend fun buildMeasuredTextUncached(
     text: String,
     fontStack: HbFontStack,
+    sizePx: Float,
     features: List<HbFeature>,
     direction: HbDirection,
     language: HbLanguage,
 ): MeasuredText = runShapingWork {
-    if (text.isEmpty()) return@runShapingWork MeasuredText.empty(fontStack.primary)
+    if (text.isEmpty()) return@runShapingWork MeasuredText.empty(fontStack.primary, sizePx)
 
     val perFontFlags = fontStack.fonts.map { defaultFlagsFor(it) }
     val pass = fontStack.buildMeasured(
         text = text,
+        sizePx = sizePx,
         baseDirection = direction,
         features = features,
         language = language,
@@ -217,7 +223,7 @@ private suspend fun buildMeasuredTextUncached(
 
     for ((index, fontPass) in pass.fontPasses.withIndex()) {
         if (index > 0) yieldToBrowser()
-        val caches = parseFontPass(fontPass, svgPreSliced = pass.svgBytesPreSliced)
+        val caches = parseFontPass(fontPass, sizePx = sizePx, svgPreSliced = pass.svgBytesPreSliced)
         val font = fontPass.font
         flippedPathsByFont[font] = caches.flippedPaths
         rawPathsByFont[font] = caches.rawPaths
@@ -239,9 +245,9 @@ private suspend fun buildMeasuredTextUncached(
 
     val advance = pass.paragraph.totalAdvance
 
-    val ext = runCatching { fontStack.primary.hExtents }.getOrNull()
-    val ascent = ext?.ascender ?: (fontStack.primary.pointSize * 0.8f)
-    val descent = ext?.let { -it.descender } ?: (fontStack.primary.pointSize * 0.2f)
+    val ext = runCatching { fontStack.primary.hExtents(sizePx) }.getOrNull()
+    val ascent = ext?.ascender ?: (sizePx * 0.8f)
+    val descent = ext?.let { -it.descender } ?: (sizePx * 0.2f)
     val lineGap = ext?.lineGap ?: 0f
     val baseline = ascent
 
@@ -252,6 +258,7 @@ private suspend fun buildMeasuredTextUncached(
     MeasuredText(
         paragraph = pass.paragraph,
         fontStack = fontStack,
+        sizePx = sizePx,
         ink = ink,
         logical = logical,
         baseline = baseline,
@@ -291,7 +298,11 @@ private class FontCaches(
  * SVG-in-OT raster work below is unrelated and stays as-is - that one
  * is already lazy via [LazySvgGlyphCache].
  */
-private suspend fun parseFontPass(pass: MeasuredFontPass, svgPreSliced: Boolean): FontCaches {
+private suspend fun parseFontPass(
+    pass: MeasuredFontPass,
+    sizePx: Float,
+    svgPreSliced: Boolean,
+): FontCaches {
     val font = pass.font
     val pathScale = font.pathScale
 
@@ -319,7 +330,7 @@ private suspend fun parseFontPass(pass: MeasuredFontPass, svgPreSliced: Boolean)
     val svgCache = LazySvgGlyphCache.build(
         face = font.face,
         svgBytesByGlyph = svgBytesByGlyph,
-        pointSize = font.pointSize,
+        pointSize = sizePx,
         upem = upem,
     )
 

@@ -60,7 +60,6 @@ class VariableFontsScreenshotTest {
         val bytes = readFontBytes(FontPath.TROX_VARIABLE)
         val face = HbFace.from { bytes(bytes) }
         val font = face.toFont(
-            pointSize = 64f,
             variations = listOf(
                 HbVariation.of("MORF", morf),
                 HbVariation.of("wdth", wdth),
@@ -104,6 +103,7 @@ class VariableFontsScreenshotTest {
             ShapedText(
                 text = "Trox harfbuzz",
                 font = font,
+                sizePx = 64f,
                 color = Color(0xFF1E1B22),
                 modifier = Modifier.fillMaxWidth().height(80.dp),
             )

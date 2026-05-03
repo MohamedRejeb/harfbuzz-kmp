@@ -59,14 +59,13 @@ import kotlin.coroutines.cancellation.CancellationException
 public fun rememberHbFontAsync(
     fallback: HbFont,
     bytesProvider: suspend () -> ByteArray,
-    sizePx: Float = DEFAULT_FONT_SIZE_PX,
     key: Any? = bytesProvider,
 ): State<HbFont> {
-    val state: MutableState<HbFont> = remember(fallback, key, sizePx) { mutableStateOf(fallback) }
-    val holder = remember(key, sizePx) { AsyncFontHolder() }
+    val state: MutableState<HbFont> = remember(fallback, key) { mutableStateOf(fallback) }
+    val holder = remember(key) { AsyncFontHolder() }
 
-    LaunchedEffect(key, sizePx) {
-        // Reset to fallback every time the key/size flips so a new resource
+    LaunchedEffect(key) {
+        // Reset to fallback every time the key flips so a new resource
         // doesn't briefly show the previous frame's font.
         state.value = fallback
         var loadedFont: HbFont? = null
@@ -79,7 +78,7 @@ public fun rememberHbFontAsync(
                 harfBuzzInit()
                 val bytes = bytesProvider()
                 val face = HbFaceCache.get(bytes)
-                face.toFont(sizePx)
+                face.toFont()
             }
             loadedFont = font
             holder.font = font
@@ -91,12 +90,12 @@ public fun rememberHbFontAsync(
             loadedFont?.close()
             if (isStaleHbHandleAsync(cause)) return@LaunchedEffect
             // Stay on fallback - surface to platform console for debugging.
-            println("[kotlin-harfbuzz] rememberHbFontAsync failed for key=$key sizePx=$sizePx: $cause")
+            println("[kotlin-harfbuzz] rememberHbFontAsync failed for key=$key: $cause")
             cause.printStackTrace()
         }
     }
 
-    DisposableEffect(key, sizePx) {
+    DisposableEffect(key) {
         onDispose {
             // The async-loaded font is unique to this remember slot - close.
             // Fallback is caller-owned; HbFace stays in HbFaceCache.

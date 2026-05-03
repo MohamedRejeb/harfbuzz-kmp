@@ -46,6 +46,7 @@ import com.mohamedrejeb.harfbuzz.native.hb_ot_color_layer_t
 import com.mohamedrejeb.harfbuzz.native.hb_ot_color_palette_get_colors
 import com.mohamedrejeb.harfbuzz.native.hb_font_get_glyph_h_advance
 import com.mohamedrejeb.harfbuzz.native.hb_font_set_scale
+import cnames.structs.hb_font_t
 import com.mohamedrejeb.harfbuzz.native.hb_glyph_extents_t
 import com.mohamedrejeb.harfbuzz.native.hb_language_from_string
 import com.mohamedrejeb.harfbuzz.native.hb_script_from_iso15924_tag
@@ -79,6 +80,15 @@ import kotlinx.cinterop.value
 // Same 26.6 fixed-point convention as the JVM bridge.
 @OptIn(ExperimentalForeignApi::class)
 private const val SUBPIXEL_FACTOR = 64
+
+/**
+ * Design-space pseudo-size used to mint the per-face "meta" font that
+ * answers style queries. hb_style_get_value normalises by upem internally
+ * so the absolute scale is irrelevant; we still need a non-zero value to
+ * keep hb_font_t in a valid state. Mirrors `DESIGN_SCALE_POINT_SIZE` on JVM.
+ */
+@OptIn(ExperimentalForeignApi::class)
+private const val DESIGN_SCALE_POINT_SIZE: Float = 1f
 
 private fun toPixels(hbValue: Int): Float = hbValue.toFloat() / SUBPIXEL_FACTOR
 
@@ -156,20 +166,18 @@ public actual class HbFace internal constructor(
         return hb_ot_color_has_svg(handle.reinterpret()) != 0
     }
 
-    public actual suspend fun toFont(pointSize: Float): HbFont = withContext(harfbuzzDispatcher) {
+    public actual suspend fun toFont(): HbFont = withContext(harfbuzzDispatcher) {
         check(!closed) { "hb object disposed" }
         val fontPtr = hb_font_create(handle.reinterpret())
             ?: throw HbException("hb_font_create returned null")
-        setFontScaleFromPointSize(fontPtr, pointSize)
-        HbFont(this@HbFace, fontPtr, pointSize)
+        HbFont(this@HbFace, fontPtr)
     }
 
-    public actual suspend fun toFont(pointSize: Float, variations: List<HbVariation>): HbFont =
+    public actual suspend fun toFont(variations: List<HbVariation>): HbFont =
         withContext(harfbuzzDispatcher) {
             check(!closed) { "hb object disposed" }
             val fontPtr = hb_font_create(handle.reinterpret())
                 ?: throw HbException("hb_font_create returned null")
-            setFontScaleFromPointSize(fontPtr, pointSize)
             if (variations.isNotEmpty()) {
                 memScoped {
                     val arr = allocArray<hb_variation_t>(variations.size)
@@ -180,8 +188,31 @@ public actual class HbFace internal constructor(
                     hb_font_set_variations(fontPtr, arr, variations.size.convert())
                 }
             }
-            HbFont(this@HbFace, fontPtr, pointSize)
+            HbFont(this@HbFace, fontPtr)
         }
+
+    private var metaFontPtr: CPointer<hb_font_t>? = null
+
+    private fun ensureMetaFontPtr(): CPointer<hb_font_t> {
+        metaFontPtr?.let { return it }
+        val p = hb_font_create(handle.reinterpret())
+            ?: throw HbException("hb_font_create returned null")
+        metaFontPtr = p
+        return p
+    }
+
+    public actual val styleHint: FontStyleHint by lazy {
+        if (closed) return@lazy FontStyleHint()
+        val mp = ensureMetaFontPtr()
+        val weight = hb_style_get_value(mp, HB_STYLE_TAG_WEIGHT.toUInt())
+        val italic = hb_style_get_value(mp, HB_STYLE_TAG_ITALIC.toUInt())
+        val width = hb_style_get_value(mp, HB_STYLE_TAG_WIDTH.toUInt())
+        FontStyleHint(
+            weight = if (weight > 0f) weight.toInt().coerceIn(1, 1000) else 400,
+            italic = italic > 0.5f,
+            width = if (width > 0f) width else 1f,
+        )
+    }
 
     public actual fun variationAxes(): List<HbVariationAxis> {
         check(!closed) { "hb object disposed" }
@@ -209,7 +240,12 @@ public actual class HbFace internal constructor(
         closed = true
         // Same race-window reasoning as HbFont.close() - see comment there.
         val h = handle
-        harfbuzzDispatcher.dispatch(EmptyCoroutineContext, Runnable { hb_face_destroy(h.reinterpret()) })
+        val mp = metaFontPtr
+        metaFontPtr = null
+        harfbuzzDispatcher.dispatch(EmptyCoroutineContext, Runnable {
+            mp?.let { hb_font_destroy(it) }
+            hb_face_destroy(h.reinterpret())
+        })
     }
 
     public actual companion object {
@@ -276,18 +312,20 @@ public actual class HbFace internal constructor(
 public actual class HbFont internal constructor(
     public actual val face: HbFace,
     internal val handle: CPointer<*>,
-    pointSizeInit: Float,
 ) : AutoCloseable {
     private var closed: Boolean = false
 
-    public actual var pointSize: Float = pointSizeInit
-        set(value) {
-            check(!closed) { "hb object disposed" }
-            setFontScaleFromPointSize(handle, value)
-            field = value
-        }
-
     public actual val isClosed: Boolean get() = closed
+
+    /**
+     * Set the underlying hb_font_t scale to [sizePx]. Caller must already
+     * be on [harfbuzzDispatcher]; this performs no synchronisation of
+     * its own. Used by every size-dependent path right before invoking
+     * the relevant cinterop primitive.
+     */
+    private fun setScale(sizePx: Float) {
+        setFontScaleFromPointSize(handle, sizePx)
+    }
 
     public actual suspend fun glyphIdForCodepoint(codepoint: Int): Int =
         withContext(harfbuzzDispatcher) {
@@ -299,16 +337,18 @@ public actual class HbFont internal constructor(
             }
         }
 
-    public actual suspend fun glyphAdvance(glyphId: Int): Float =
+    public actual suspend fun glyphAdvance(glyphId: Int, sizePx: Float): Float =
         withContext(harfbuzzDispatcher) {
             check(!closed) { "hb object disposed" }
+            setScale(sizePx)
             val adv = hb_font_get_glyph_h_advance(handle.reinterpret(), glyphId.convert())
             toPixels(adv)
         }
 
-    public actual suspend fun glyphExtents(glyphId: Int): GlyphExtents? =
+    public actual suspend fun glyphExtents(glyphId: Int, sizePx: Float): GlyphExtents? =
         withContext(harfbuzzDispatcher) {
             check(!closed) { "hb object disposed" }
+            setScale(sizePx)
             memScoped {
                 val ext = alloc<hb_glyph_extents_t>()
                 val ok = hb_font_get_glyph_extents(handle.reinterpret(), glyphId.convert(), ext.ptr)
@@ -321,38 +361,24 @@ public actual class HbFont internal constructor(
             }
         }
 
-    // Lazy so the cinterop call doesn't run at HbFont construction; same
-    // rationale as the JVM/Android actual - first read happens inside
-    // `runShapingWork` from `buildMeasuredText`.
-    public actual val hExtents: FontExtents? by lazy {
-        if (closed) return@lazy null
-        memScoped {
-            val ext = alloc<hb_font_extents_t>()
-            val ok = hb_font_get_h_extents(handle.reinterpret(), ext.ptr)
-            if (ok == 0) null else FontExtents(
-                ascender = toPixels(ext.ascender),
-                descender = toPixels(ext.descender),
-                lineGap = toPixels(ext.line_gap),
-            )
+    public actual suspend fun hExtents(sizePx: Float): FontExtents? =
+        withContext(harfbuzzDispatcher) {
+            check(!closed) { "hb object disposed" }
+            setScale(sizePx)
+            memScoped {
+                val ext = alloc<hb_font_extents_t>()
+                val ok = hb_font_get_h_extents(handle.reinterpret(), ext.ptr)
+                if (ok == 0) null else FontExtents(
+                    ascender = toPixels(ext.ascender),
+                    descender = toPixels(ext.descender),
+                    lineGap = toPixels(ext.line_gap),
+                )
+            }
         }
-    }
 
     // iOS draw callbacks emit pixel-space coords once `drawGlyph` is wired
     // up; `snapshotGlyphs` returns empty path maps until then.
     public actual val pathScale: Float = 1f
-
-    public actual val styleHint: FontStyleHint by lazy {
-        if (closed) return@lazy FontStyleHint()
-        val font = handle.reinterpret<com.mohamedrejeb.harfbuzz.native.hb_font_t>()
-        val weight = hb_style_get_value(font, HB_STYLE_TAG_WEIGHT.toUInt())
-        val italic = hb_style_get_value(font, HB_STYLE_TAG_ITALIC.toUInt())
-        val width = hb_style_get_value(font, HB_STYLE_TAG_WIDTH.toUInt())
-        FontStyleHint(
-            weight = if (weight > 0f) weight.toInt().coerceIn(1, 1000) else 400,
-            italic = italic > 0.5f,
-            width = if (width > 0f) width else 1f,
-        )
-    }
 
     public actual suspend fun glyphColorLayers(glyphId: Int): List<ColorLayer> =
         withContext(harfbuzzDispatcher) {
@@ -399,37 +425,43 @@ public actual class HbFont internal constructor(
             }
         }
 
-    public actual suspend fun shape(buffer: HbBuffer): ShapedRun =
+    public actual suspend fun shape(buffer: HbBuffer, sizePx: Float): ShapedRun =
         withContext(harfbuzzDispatcher) {
             check(!closed) { "hb object disposed" }
+            setScale(sizePx)
             IosShaping.shapeBufferIntoRun(this@HbFont, buffer, buffer.features)
         }
 
     public actual suspend fun shapeParagraph(
         text: String,
+        sizePx: Float,
         baseDirection: HbDirection,
         features: List<HbFeature>,
         language: HbLanguage,
     ): ShapedParagraph = withContext(harfbuzzDispatcher) {
         check(!closed) { "hb object disposed" }
-        IosShaping.shapeParagraph(this@HbFont, text, baseDirection, features, language)
+        setScale(sizePx)
+        IosShaping.shapeParagraph(this@HbFont, text, sizePx, baseDirection, features, language)
     }
 
-    public actual suspend fun drawGlyph(glyphId: Int, sink: HbPathSink) {
+    public actual suspend fun drawGlyph(glyphId: Int, sizePx: Float, sink: HbPathSink) {
         withContext(harfbuzzDispatcher) {
             check(!closed) { "hb object disposed" }
+            setScale(sizePx)
             throw HbException("drawGlyph on iOS not yet implemented")
         }
     }
 
     public actual suspend fun paintGlyph(
         glyphId: Int,
+        sizePx: Float,
         foreground: Int,
         paletteIndex: Int,
         sink: HbPaintSink,
     ) {
         withContext(harfbuzzDispatcher) {
             check(!closed) { "hb object disposed" }
+            setScale(sizePx)
             // Pass the sink as user_data via a StableRef so the static C
             // callbacks in IosPaintFuncs can recover it. Dispose immediately
             // after the walk - paint trees are walked synchronously.
@@ -457,9 +489,11 @@ public actual class HbFont internal constructor(
 
     public actual suspend fun snapshotGlyphs(
         gids: IntArray,
+        sizePx: Float,
         flags: GlyphSnapshotFlags,
     ): GlyphSnapshot = withContext(harfbuzzDispatcher) {
         check(!closed) { "hb object disposed" }
+        setScale(sizePx)
         // iOS notes:
         //  * `drawGlyph` is not yet implemented; until then `flippedPath`/
         //    `rawPath` are unsupported and the corresponding maps stay empty.
@@ -741,6 +775,7 @@ internal object IosShaping {
     suspend fun shapeParagraph(
         font: HbFont,
         text: String,
+        sizePx: Float,
         baseDirection: HbDirection,
         features: List<HbFeature>,
         language: HbLanguage,
@@ -772,7 +807,7 @@ internal object IosShaping {
                 buf.language = language
                 buf.features = features
 
-                val shaped = font.shape(buf)
+                val shaped = font.shape(buf, sizePx)
                 val offsetGlyphs = shaped.glyphs.map { it.copy(cluster = it.cluster + run.start) }
                 runs.add(shaped.copy(glyphs = offsetGlyphs))
                 totalAdvance += shaped.totalAdvance

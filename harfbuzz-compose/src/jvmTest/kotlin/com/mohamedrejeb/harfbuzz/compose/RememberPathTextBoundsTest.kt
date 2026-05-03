@@ -48,14 +48,15 @@ class RememberPathTextBoundsTest {
     fun `bounds on empty paragraph yields Rect Zero`() = runBlocking {
         harfBuzzInit()
         val face = HbFace.fromBytes(TestFonts.robotoRegular())
-        val font = face.toFont(32f)
+        val font = face.toFont()
         try {
             val stack = HbFontStack(font)
-            val shaped = stack.shapeOnlyBounds("")
+            val shaped = stack.shapeOnlyBounds("", sizePx = 32f)
             val path = Path().apply { moveTo(0f, 0f); lineTo(1000f, 0f) }
             val bounds = computePathTextBounds(
                 paragraph = shaped.paragraph,
                 primaryFont = font,
+                sizePx = 32f,
                 path = path,
                 startOffset = 0f,
                 side = TextOnPathSide.Above,
@@ -74,14 +75,15 @@ class RememberPathTextBoundsTest {
     fun `bounds on horizontal line have non-empty ink and matching advance`() = runBlocking {
         harfBuzzInit()
         val face = HbFace.fromBytes(TestFonts.robotoRegular())
-        val font = face.toFont(32f)
+        val font = face.toFont()
         try {
             val stack = HbFontStack(font)
-            val shaped = stack.shapeOnlyBounds("Hello")
+            val shaped = stack.shapeOnlyBounds("Hello", sizePx = 32f)
             val path = Path().apply { moveTo(0f, 0f); lineTo(1000f, 0f) }
             val bounds = computePathTextBounds(
                 paragraph = shaped.paragraph,
                 primaryFont = font,
+                sizePx = 32f,
                 path = path,
                 startOffset = 0f,
                 side = TextOnPathSide.Above,
@@ -106,15 +108,16 @@ class RememberPathTextBoundsTest {
         // Slack accounts for HB-extent vs path-bound sub-pixel differences.
         harfBuzzInit()
         val face = HbFace.fromBytes(TestFonts.robotoRegular())
-        val font = face.toFont(32f)
+        val font = face.toFont()
         try {
             val stack = HbFontStack(font)
             val text = "Hello"
-            val shaped = stack.shapeOnlyBounds(text)
+            val shaped = stack.shapeOnlyBounds(text, sizePx = 32f)
             val path = Path().apply { moveTo(0f, 0f); lineTo(1000f, 0f) }
             val pathBounds = computePathTextBounds(
                 paragraph = shaped.paragraph,
                 primaryFont = font,
+                sizePx = 32f,
                 path = path,
                 startOffset = 0f,
                 side = TextOnPathSide.Above,

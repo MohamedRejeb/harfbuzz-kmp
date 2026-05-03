@@ -94,6 +94,7 @@ internal fun clearMeasuredTextCacheForTest() {
 internal data class MeasureKey(
     val text: String,
     val fonts: List<HbFont>,
+    val sizePx: Float,
     val features: List<HbFeature>,
     val direction: HbDirection,
     val language: HbLanguage,
@@ -102,12 +103,14 @@ internal data class MeasureKey(
 internal fun measureKeyOf(
     text: String,
     fontStack: HbFontStack,
+    sizePx: Float,
     features: List<HbFeature>,
     direction: HbDirection,
     language: HbLanguage,
 ): MeasureKey = MeasureKey(
     text = text,
     fonts = fontStack.fonts,
+    sizePx = sizePx,
     features = features,
     direction = direction,
     language = language,

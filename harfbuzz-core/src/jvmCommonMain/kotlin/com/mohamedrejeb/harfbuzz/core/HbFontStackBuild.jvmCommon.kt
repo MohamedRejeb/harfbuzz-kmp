@@ -8,6 +8,7 @@ package com.mohamedrejeb.harfbuzz.core
  */
 internal actual suspend fun HbFontStack.tryBuildMeasuredFastPath(
     text: String,
+    sizePx: Float,
     baseDirection: HbDirection,
     features: List<HbFeature>,
     language: HbLanguage,

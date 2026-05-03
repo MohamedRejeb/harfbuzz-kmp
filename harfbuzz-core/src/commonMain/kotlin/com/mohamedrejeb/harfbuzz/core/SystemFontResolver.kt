@@ -15,12 +15,12 @@ package com.mohamedrejeb.harfbuzz.core
  */
 internal interface SystemFontResolver : AutoCloseable {
     /**
-     * Find a system font that covers [codepoint] at [pointSize], or
-     * `null` if none is available. Returned [HbFont] instances are
-     * owned by this resolver - do not close them directly; closing
-     * the resolver closes them all.
+     * Find a sizeless system font that covers [codepoint], or `null` if
+     * none is available. Returned [HbFont] instances are owned by this
+     * resolver - do not close them directly; closing the resolver
+     * closes them all.
      */
-    suspend fun fontFor(codepoint: Int, pointSize: Float): HbFont?
+    suspend fun fontFor(codepoint: Int): HbFont?
 
     /**
      * Pre-resolve every codepoint in [codepoints] so the resolver's
@@ -34,8 +34,8 @@ internal interface SystemFontResolver : AutoCloseable {
      * benefit (iOS uses the CoreText cascade; Wasm has no system font
      * access) override to no-op.
      */
-    suspend fun prewarm(codepoints: IntArray, pointSize: Float) {
-        for (cp in codepoints) fontFor(cp, pointSize)
+    suspend fun prewarm(codepoints: IntArray) {
+        for (cp in codepoints) fontFor(cp)
     }
 }
 

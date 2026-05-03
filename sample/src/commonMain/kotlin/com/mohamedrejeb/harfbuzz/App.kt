@@ -340,30 +340,26 @@ private fun DemoCard(
 private fun FontDemos(isCompact: Boolean) {
     val arabicState by rememberHbFont(
         bytesProvider = { readFontBytes(FontPath.ARABIC_REGULAR) },
-        sizePx = 32f,
         key = FontPath.ARABIC_REGULAR,
     )
     val latinState by rememberHbFont(
         bytesProvider = { readFontBytes(FontPath.LATIN_REGULAR) },
-        sizePx = 24f,
         key = FontPath.LATIN_REGULAR,
     )
     val arabicBoldState by rememberHbFont(
         bytesProvider = { readFontBytes(FontPath.ARABIC_BOLD) },
-        sizePx = 32f,
         key = FontPath.ARABIC_BOLD,
     )
     // Aref Ruqaa Ink ships COLR v1 + SVG-in-OT - a great showcase for
-    // the paint pipeline. Loaded at 64 px so the inked gradients are
-    // visible without zooming in.
+    // the paint pipeline. Each demo passes its own sizePx down to the
+    // render call, since fonts are sizeless and one font instance can
+    // paint at any size.
     val arefRuqaaInkState by rememberHbFont(
         bytesProvider = { readFontBytes(FontPath.AREF_RUQAA_INK_REGULAR) },
-        sizePx = 64f,
         key = FontPath.AREF_RUQAA_INK_REGULAR,
     )
     val emojiState by rememberHbFont(
         bytesProvider = { readFontBytes(FontPath.EMOJI) },
-        sizePx = 56f,
         key = FontPath.EMOJI,
     )
 
@@ -427,16 +423,28 @@ private fun FontDemos(isCompact: Boolean) {
 
                 demoSections(
                     itemModifier = itemModifier,
-                    latin = latin,
-                    arabic = arabic,
-                    arabicBold = arabicBold,
-                    arefRuqaaInk = arefRuqaaInk,
-                    emoji = emoji,
+                    latin = DemoFont(latin, sizePx = LATIN_SIZE_PX),
+                    arabic = DemoFont(arabic, sizePx = ARABIC_SIZE_PX),
+                    arabicBold = DemoFont(arabicBold, sizePx = ARABIC_SIZE_PX),
+                    arefRuqaaInk = DemoFont(arefRuqaaInk, sizePx = AREF_RUQAA_INK_SIZE_PX),
+                    emoji = DemoFont(emoji, sizePx = EMOJI_SIZE_PX),
                 )
             }
         }
     }
 }
+
+private const val LATIN_SIZE_PX = 24f
+private const val ARABIC_SIZE_PX = 32f
+private const val AREF_RUQAA_INK_SIZE_PX = 64f
+private const val EMOJI_SIZE_PX = 56f
+
+/**
+ * Pairs a [HbFont] with the pixel size each demo intends to render at.
+ * Fonts are sizeless, so the size lives on the call rather than baked
+ * into the font. Bundling them keeps the demo signatures terse.
+ */
+internal data class DemoFont(val font: HbFont, val sizePx: Float)
 
 /**
  * Adds the demo cards as `LazyColumn` items, grouped by thematic section.
@@ -445,11 +453,11 @@ private fun FontDemos(isCompact: Boolean) {
  */
 private fun LazyListScope.demoSections(
     itemModifier: Modifier,
-    latin: HbFont,
-    arabic: HbFont,
-    arabicBold: HbFont,
-    arefRuqaaInk: HbFont,
-    emoji: HbFont,
+    latin: DemoFont,
+    arabic: DemoFont,
+    arabicBold: DemoFont,
+    arefRuqaaInk: DemoFont,
+    emoji: DemoFont,
 ) {
     item("section-shaping") {
         Box(itemModifier) {
@@ -501,11 +509,12 @@ private fun LazyListScope.demoSections(
 }
 
 @Composable
-private fun LatinShapingDemo(font: HbFont) {
+private fun LatinShapingDemo(latin: DemoFont) {
     DemoCard(title = "Latin shaping", subtitle = "Roboto Regular · 24 px") {
         ShapedText(
             text = "Hello, kotlin-harfbuzz! 1234",
-            font = font,
+            font = latin.font,
+            sizePx = latin.sizePx,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.height(32.dp),
         )
@@ -513,26 +522,29 @@ private fun LatinShapingDemo(font: HbFont) {
 }
 
 @Composable
-private fun ArabicShapingDemo(arabic: HbFont, arabicBold: HbFont) {
+private fun ArabicShapingDemo(arabic: DemoFont, arabicBold: DemoFont) {
     DemoCard(title = "Arabic shaping", subtitle = "Noto Naskh Arabic · 32 px") {
         OutputLabel("Regular")
         ShapedText(
             text = "نَصٌّ عَرَبِيٌّ مُشَكَّلٌ لِلْاِخْتِبَارِ",
-            font = arabic,
+            font = arabic.font,
+            sizePx = arabic.sizePx,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.height(40.dp).fillMaxWidth(),
         )
         OutputLabel("Mixed Latin + Arabic + numerals")
         ShapedText(
             text = "Hello مرحبا 123 لاختبار",
-            font = arabic,
+            font = arabic.font,
+            sizePx = arabic.sizePx,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.height(40.dp).fillMaxWidth(),
         )
         OutputLabel("Bold")
         ShapedText(
             text = "كَلِمَاتٌ عَرَبِيَّةٌ مُشَكَّلَةٌ لِلْاِخْتِبَارِ",
-            font = arabicBold,
+            font = arabicBold.font,
+            sizePx = arabicBold.sizePx,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.height(40.dp).fillMaxWidth(),
         )
@@ -555,7 +567,7 @@ private fun ArabicShapingDemo(arabic: HbFont, arabicBold: HbFont) {
  * the font designer baked into the SVG / paint trees.
  */
 @Composable
-private fun ColorGlyphsDemo(arefRuqaaInk: HbFont, emoji: HbFont) {
+private fun ColorGlyphsDemo(arefRuqaaInk: DemoFont, emoji: DemoFont) {
     var forceForeground by remember { mutableStateOf(false) }
     DemoCard(
         title = "Color glyphs",
@@ -575,7 +587,8 @@ private fun ColorGlyphsDemo(arefRuqaaInk: HbFont, emoji: HbFont) {
         OutputLabel("Aref Ruqaa Ink - gradient inks via SVG-in-OT")
         ShapedText(
             text = "نص عربي تجريبي للاختبار",
-            font = arefRuqaaInk,
+            font = arefRuqaaInk.font,
+            sizePx = arefRuqaaInk.sizePx,
             color = MaterialTheme.colorScheme.primary,
             forceForegroundColor = forceForeground,
             modifier = Modifier.height(80.dp).fillMaxWidth(),
@@ -583,7 +596,8 @@ private fun ColorGlyphsDemo(arefRuqaaInk: HbFont, emoji: HbFont) {
         OutputLabel("Noto Color Emoji - multi-layer paint trees")
         ShapedText(
             text = "😀🌍🎉⭐❤️🦊🐱🍕",
-            font = emoji,
+            font = emoji.font,
+            sizePx = emoji.sizePx,
             forceForegroundColor = forceForeground,
             modifier = Modifier.height(72.dp).fillMaxWidth(),
         )
@@ -607,13 +621,17 @@ private fun ColorGlyphsDemo(arefRuqaaInk: HbFont, emoji: HbFont) {
  *     cluster routes through the chain until a font resolves it.
  */
 @Composable
-private fun FallbackFontsDemo(latin: HbFont, arabic: HbFont, emoji: HbFont) {
+private fun FallbackFontsDemo(latin: DemoFont, arabic: DemoFont, emoji: DemoFont) {
     // Build the stack once and remember it so HbFontStack identity is
     // stable across recompositions - rememberMeasuredText keys on it,
     // so a fresh stack would re-shape every frame.
-    val stack = remember(latin, arabic, emoji) {
-        HbFontStack(primary = latin, fallbacks = listOf(arabic, emoji))
+    val stack = remember(latin.font, arabic.font, emoji.font) {
+        HbFontStack(primary = latin.font, fallbacks = listOf(arabic.font, emoji.font))
     }
+    // The stack renders at one size per call: pick the primary's
+    // intended size so Roboto-only lines look right, and let the
+    // Arabic + emoji fallbacks paint at the same size for visual parity.
+    val stackSizePx = latin.sizePx
     DemoCard(
         title = "Fallback fonts (Tier 1)",
         subtitle = "HbFontStack - Roboto primary, Noto Naskh + Color Emoji fallbacks",
@@ -622,6 +640,7 @@ private fun FallbackFontsDemo(latin: HbFont, arabic: HbFont, emoji: HbFont) {
         ShapedText(
             text = "All resolved by Roboto",
             fontStack = stack,
+            sizePx = stackSizePx,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.height(32.dp).fillMaxWidth(),
         )
@@ -629,6 +648,7 @@ private fun FallbackFontsDemo(latin: HbFont, arabic: HbFont, emoji: HbFont) {
         ShapedText(
             text = "نص عربي تجريبي للاختبار",
             fontStack = stack,
+            sizePx = stackSizePx,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.height(40.dp).fillMaxWidth(),
         )
@@ -636,6 +656,7 @@ private fun FallbackFontsDemo(latin: HbFont, arabic: HbFont, emoji: HbFont) {
         ShapedText(
             text = "Hello مرحبا 👋 العالم 🌍",
             fontStack = stack,
+            sizePx = stackSizePx,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.height(56.dp).fillMaxWidth(),
         )
@@ -740,7 +761,7 @@ private fun VariableFontsControls(
         value = HbFontLoad.Loading
         var built: HbFont? = null
         try {
-            built = face.toFont(64f, variations)
+            built = face.toFont(variations)
             value = HbFontLoad.Ready(built)
         } catch (ce: kotlin.coroutines.cancellation.CancellationException) {
             built?.close()
@@ -792,6 +813,7 @@ private fun VariableFontsControls(
             ShapedText(
                 text = "Trox harfbuzz",
                 font = font,
+                sizePx = 64f,
                 color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.fillMaxWidth().height(72.dp),
             )
@@ -870,7 +892,7 @@ private fun AxisSlider(
 }
 
 @Composable
-private fun FeatureToggleDemo(font: HbFont) {
+private fun FeatureToggleDemo(arabic: DemoFont) {
     var ligaturesOn by remember { mutableStateOf(true) }
     var contextualOn by remember { mutableStateOf(true) }
     val features = listOf(
@@ -900,7 +922,8 @@ private fun FeatureToggleDemo(font: HbFont) {
         }
         ShapedText(
             text = "لا كلام بلا فائدة في الحوار",
-            font = font,
+            font = arabic.font,
+            sizePx = arabic.sizePx,
             color = MaterialTheme.colorScheme.onBackground,
             features = features,
             modifier = Modifier.height(40.dp).fillMaxWidth(),
@@ -914,20 +937,22 @@ private fun FeatureToggleDemo(font: HbFont) {
  * (amber) on top of HarfBuzz-shaped text.
  */
 @Composable
-private fun BoundsDemo(latin: HbFont, arabic: HbFont) {
+private fun BoundsDemo(latin: DemoFont, arabic: DemoFont) {
     DemoCard(
         title = "Calculated bounds",
         subtitle = "magenta = ink · cyan = logical · amber = baseline",
     ) {
         ShapedTextWithBounds(
             text = "Hello, kotlin-harfbuzz! gjpqy",
-            font = latin,
+            font = latin.font,
+            sizePx = latin.sizePx,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.fillMaxWidth(),
         )
         ShapedTextWithBounds(
             text = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
-            font = arabic,
+            font = arabic.font,
+            sizePx = arabic.sizePx,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -942,7 +967,7 @@ private fun BoundsDemo(latin: HbFont, arabic: HbFont) {
  * off visually.
  */
 @Composable
-private fun LineLayoutDemo(latin: HbFont, arabic: HbFont) {
+private fun LineLayoutDemo(latin: DemoFont, arabic: DemoFont) {
     DemoCard(
         title = "Line alignment, justify, overflow",
         subtitle = "Cyan box marks the slot bounds for each line.",
@@ -997,7 +1022,7 @@ private fun LineLayoutDemo(latin: HbFont, arabic: HbFont) {
 
 @Composable
 private fun SlotLine(
-    font: HbFont,
+    font: DemoFont,
     text: String,
     slot: Dp,
     alignment: ParagraphAlignment = ParagraphAlignment.Start,
@@ -1015,7 +1040,8 @@ private fun SlotLine(
     ) {
         ShapedText(
             text = text,
-            font = font,
+            font = font.font,
+            sizePx = font.sizePx,
             color = MaterialTheme.colorScheme.onBackground,
             alignment = alignment,
             justification = justification,
@@ -1031,7 +1057,7 @@ private fun SlotLine(
  * the family/weight/italic selection forces a different binary.
  */
 @Composable
-private fun DynamicTextDemo(latin: HbFont, arabic: HbFont) {
+private fun DynamicTextDemo(latin: DemoFont, arabic: DemoFont) {
     var input by remember { mutableStateOf("Hello مرحبا 1234") }
     var family by remember { mutableStateOf(SampleFamily.Roboto) }
     var weight by remember { mutableStateOf(SampleWeight.Regular) }
@@ -1051,7 +1077,6 @@ private fun DynamicTextDemo(latin: HbFont, arabic: HbFont) {
 
     val dynamicFontState by rememberHbFont(
         bytesProvider = { readFontBytes(fontPath) },
-        sizePx = sizePx,
         key = fontPath,
     )
 
@@ -1166,6 +1191,7 @@ private fun DynamicTextDemo(latin: HbFont, arabic: HbFont) {
             is FontLoad.Ready -> ShapedTextWithBounds(
                 text = input,
                 font = s.font,
+                sizePx = sizePx,
                 color = textColor.resolve(),
                 direction = direction,
                 forceForegroundColor = forceForegroundColor,
@@ -1396,6 +1422,7 @@ private fun resolveFontPath(
 private fun ShapedTextWithBounds(
     text: String,
     font: HbFont,
+    sizePx: Float,
     color: Color,
     modifier: Modifier = Modifier,
     direction: HbDirection = HbDirection.AUTO,
@@ -1407,7 +1434,7 @@ private fun ShapedTextWithBounds(
     logicalColor: Color = Color(0xFF00BCD4),   // cyan
     baselineColor: Color = Color(0xFFFFB300),  // amber
 ) {
-    val loadState by rememberMeasuredText(text, font, direction = direction)
+    val loadState by rememberMeasuredText(text, font, sizePx = sizePx, direction = direction)
     val measured: MeasuredText? = (loadState as? MeasuredTextLoad.Ready)?.measured
 
     // Size the layout so the logical line box (y = 0..lineHeight, baseline
@@ -1478,7 +1505,7 @@ private fun ShapedTextWithBounds(
 }
 
 @Composable
-private fun ArcTextDemo(font: HbFont) {
+private fun ArcTextDemo(arabicBold: DemoFont) {
     var radiusDp by remember { mutableStateOf(110f) }
     DemoCard(title = "Arc text", subtitle = "Arabic shaped onto a circle") {
         ControlLabel("Radius: ${radiusDp.toInt()} dp")
@@ -1496,7 +1523,8 @@ private fun ArcTextDemo(font: HbFont) {
         ) {
             ArcText(
                 text = "نص عربي تجريبي للاختبار",
-                font = font,
+                font = arabicBold.font,
+                sizePx = arabicBold.sizePx,
                 radius = radiusDp.dp,
                 side = ArcSide.Outside,
                 color = MaterialTheme.colorScheme.primary,

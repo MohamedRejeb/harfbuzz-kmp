@@ -34,6 +34,13 @@ public class MeasuredText internal constructor(
      * up font-specific caches by run.
      */
     public val fontStack: HbFontStack,
+    /**
+     * Pixel size the paragraph was shaped at. Renderers that need to
+     * scale per-glyph SVG bitmaps or interpret font-design coordinates
+     * (e.g. SVG-in-OT raster paths) read this so they don't have to be
+     * threaded the size separately.
+     */
+    public val sizePx: Float,
     public val ink: Rect,
     public val logical: Rect,
     public val baseline: Float,
@@ -264,7 +271,7 @@ public class MeasuredText internal constructor(
     private fun toOriginalIndex(shapedIndex: Int): Int {
         val mapping = originalToJustifiedIndex ?: return shapedIndex
         if (mapping.isEmpty()) return 0
-        val raw = mapping.binarySearch(shapedIndex)
+        val raw = mapping.binarySearchInt(shapedIndex)
         return if (raw >= 0) raw else (-raw - 2).coerceAtLeast(0)
     }
 
@@ -405,9 +412,10 @@ public class MeasuredText internal constructor(
 
     public companion object {
         /** A no-op placeholder for slots that need a non-null `MeasuredText`. */
-        public fun empty(font: HbFont): MeasuredText = MeasuredText(
+        public fun empty(font: HbFont, sizePx: Float = 0f): MeasuredText = MeasuredText(
             paragraph = ShapedParagraph.EMPTY,
             fontStack = HbFontStack(font),
+            sizePx = sizePx,
             ink = Rect.Zero,
             logical = Rect.Zero,
             baseline = 0f,
@@ -443,6 +451,7 @@ internal fun MeasuredText.withOriginalMapping(
 ): MeasuredText = MeasuredText(
     paragraph = paragraph,
     fontStack = fontStack,
+    sizePx = sizePx,
     ink = ink,
     logical = logical,
     baseline = baseline,

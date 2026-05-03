@@ -106,10 +106,14 @@ internal external fun buildDestroyFontPayload(fontId: Int): JsAny
 
 @JsFun(
     """
-    (fontId, gid) => ({ fontId: fontId | 0, gid: gid | 0 })
+    (fontId, gid, sizePx) => ({
+        fontId: fontId | 0,
+        gid: gid | 0,
+        sizePx: +sizePx
+    })
     """
 )
-internal external fun buildGlyphIdPayload(fontId: Int, gid: Int): JsAny
+internal external fun buildGlyphIdPayload(fontId: Int, gid: Int, sizePx: Float): JsAny
 
 @JsFun(
     """
@@ -120,9 +124,10 @@ internal external fun buildGlyphIdForCodepointPayload(fontId: Int, codepoint: In
 
 @JsFun(
     """
-    (fontId, gid, foreground, paletteIndex) => ({
+    (fontId, gid, sizePx, foreground, paletteIndex) => ({
         fontId: fontId | 0,
         gid: gid | 0,
+        sizePx: +sizePx,
         foreground: foreground | 0,
         paletteIndex: paletteIndex | 0
     })
@@ -131,14 +136,16 @@ internal external fun buildGlyphIdForCodepointPayload(fontId: Int, codepoint: In
 internal external fun buildPaintGlyphPayload(
     fontId: Int,
     gid: Int,
+    sizePx: Float,
     foreground: Int,
     paletteIndex: Int,
 ): JsAny
 
 @JsFun(
     """
-    (fontId, gids, flippedPath, rawPath, colorLayers, paintTree, svg) => ({
+    (fontId, sizePx, gids, flippedPath, rawPath, colorLayers, paintTree, svg) => ({
         fontId: fontId | 0,
+        sizePx: +sizePx,
         gids: Array.from(gids),
         flags: {
             flippedPath: !!flippedPath,
@@ -152,6 +159,7 @@ internal external fun buildPaintGlyphPayload(
 )
 internal external fun jsBuildSnapshotGlyphsPayload(
     fontId: Int,
+    sizePx: Float,
     gids: JsAny,
     flippedPath: Boolean,
     rawPath: Boolean,
@@ -162,6 +170,7 @@ internal external fun jsBuildSnapshotGlyphsPayload(
 
 internal fun buildSnapshotGlyphsPayload(
     fontId: Int,
+    sizePx: Float,
     gids: IntArray,
     flippedPath: Boolean,
     rawPath: Boolean,
@@ -170,6 +179,7 @@ internal fun buildSnapshotGlyphsPayload(
     svg: Boolean,
 ): JsAny = jsBuildSnapshotGlyphsPayload(
     fontId = fontId,
+    sizePx = sizePx,
     gids = gids.toJsInt32Array(),
     flippedPath = flippedPath,
     rawPath = rawPath,
@@ -182,7 +192,7 @@ internal fun buildSnapshotGlyphsPayload(
 
 @JsFun(
     """
-    (fontId, text, direction, scriptTag, language, featureTags, featureValues, featureStarts, featureEnds, count) => {
+    (fontId, sizePx, text, direction, scriptTag, language, featureTags, featureValues, featureStarts, featureEnds, count) => {
         const features = [];
         for (let i = 0; i < count; i++) {
             features.push({
@@ -194,6 +204,7 @@ internal fun buildSnapshotGlyphsPayload(
         }
         return {
             fontId: fontId | 0,
+            sizePx: +sizePx,
             text: String(text),
             direction: String(direction),
             scriptTag: scriptTag | 0,
@@ -214,6 +225,7 @@ internal fun buildSnapshotGlyphsPayload(
 )
 internal external fun jsBuildShapeRunPayload(
     fontId: Int,
+    sizePx: Float,
     text: String,
     direction: String,
     scriptTag: Int,
@@ -227,6 +239,7 @@ internal external fun jsBuildShapeRunPayload(
 
 internal fun buildShapeRunPayload(
     fontId: Int,
+    sizePx: Float,
     text: String,
     direction: String,
     scriptTag: Int,
@@ -234,7 +247,7 @@ internal fun buildShapeRunPayload(
     features: List<HbFeature>,
 ): JsAny {
     if (features.isEmpty()) {
-        return jsBuildShapeRunPayload(fontId, text, direction, scriptTag, language, null, null, null, null, 0)
+        return jsBuildShapeRunPayload(fontId, sizePx, text, direction, scriptTag, language, null, null, null, null, 0)
     }
     val tags = IntArray(features.size) { features[it].tag.raw.toInt() }
     val values = IntArray(features.size) { features[it].value.toInt() }
@@ -245,6 +258,7 @@ internal fun buildShapeRunPayload(
     }
     return jsBuildShapeRunPayload(
         fontId = fontId,
+        sizePx = sizePx,
         text = text,
         direction = direction,
         scriptTag = scriptTag,
@@ -259,7 +273,7 @@ internal fun buildShapeRunPayload(
 
 @JsFun(
     """
-    (fontId, text, baseDirection, language, featureTags, featureValues, featureStarts, featureEnds, featureCount,
+    (fontId, sizePx, text, baseDirection, language, featureTags, featureValues, featureStarts, featureEnds, featureCount,
      bidiStarts, bidiEnds, bidiIsRtl, bidiCount) => {
         const features = [];
         for (let i = 0; i < featureCount; i++) {
@@ -280,6 +294,7 @@ internal fun buildShapeRunPayload(
         }
         return {
             fontStack: [fontId | 0],
+            sizePx: +sizePx,
             text: String(text),
             baseDirection: String(baseDirection),
             features: features,
@@ -300,6 +315,7 @@ internal fun buildShapeRunPayload(
 )
 internal external fun jsBuildShapeParagraphPayload(
     fontId: Int,
+    sizePx: Float,
     text: String,
     baseDirection: String,
     language: String,
@@ -316,6 +332,7 @@ internal external fun jsBuildShapeParagraphPayload(
 
 internal fun buildShapeParagraphPayload(
     fontId: Int,
+    sizePx: Float,
     text: String,
     baseDirection: String,
     language: String,
@@ -345,6 +362,7 @@ internal fun buildShapeParagraphPayload(
     val bidiIsRtl = IntArray(bidiRuns.size) { if (bidiRuns[it].isRtl) 1 else 0 }
     return jsBuildShapeParagraphPayload(
         fontId = fontId,
+        sizePx = sizePx,
         text = text,
         baseDirection = baseDirection,
         language = language,
@@ -364,7 +382,7 @@ internal fun buildShapeParagraphPayload(
 
 @JsFun(
     """
-    (fontIds, text, baseDirection, language,
+    (fontIds, sizePx, text, baseDirection, language,
      featureTags, featureValues, featureStarts, featureEnds, featureCount,
      bidiStarts, bidiEnds, bidiIsRtl, bidiCount,
      perFontFlags) => {
@@ -400,6 +418,7 @@ internal fun buildShapeParagraphPayload(
         }
         return {
             fontStack,
+            sizePx: +sizePx,
             text: String(text),
             baseDirection: String(baseDirection),
             language: String(language),
@@ -421,6 +440,7 @@ internal fun buildShapeParagraphPayload(
 )
 internal external fun jsBuildBuildMeasuredPayload(
     fontIds: JsAny,
+    sizePx: Float,
     text: String,
     baseDirection: String,
     language: String,
@@ -438,6 +458,7 @@ internal external fun jsBuildBuildMeasuredPayload(
 
 internal fun buildBuildMeasuredPayload(
     fontIds: IntArray,
+    sizePx: Float,
     text: String,
     baseDirection: String,
     language: String,
@@ -478,6 +499,7 @@ internal fun buildBuildMeasuredPayload(
     }
     return jsBuildBuildMeasuredPayload(
         fontIds = fontIds.toJsInt32Array(),
+        sizePx = sizePx,
         text = text,
         baseDirection = baseDirection,
         language = language,

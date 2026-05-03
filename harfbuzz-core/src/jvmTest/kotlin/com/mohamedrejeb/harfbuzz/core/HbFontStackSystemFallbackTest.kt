@@ -40,7 +40,7 @@ class HbFontStackSystemFallbackTest {
         require(robotoFile.exists()) { "Roboto font not found at ${robotoFile.absolutePath}" }
         require(arabicFile.exists()) { "Noto Naskh Arabic font not found" }
         robotoFace = HbFace.from { bytes(robotoFile.readBytes()) }
-        roboto = robotoFace.toFont(24f)
+        roboto = robotoFace.toFont()
     }
 
     @AfterTest
@@ -61,7 +61,7 @@ class HbFontStackSystemFallbackTest {
             systemResolver = JvmSystemFontResolver(SystemFallback.Match(), curated),
         )
         try {
-            val paragraph = stack.shapeParagraph("Hello مرحبا", baseDirection = HbDirection.LTR)
+            val paragraph = stack.shapeParagraph("Hello مرحبا", sizePx = 24f, baseDirection = HbDirection.LTR)
             // Roboto resolves Latin; system layer resolves Arabic.
             val byFont = paragraph.runs.groupBy { it.font }
             assertNotNull(byFont[roboto], "Latin clusters should attribute to Roboto")
@@ -85,7 +85,7 @@ class HbFontStackSystemFallbackTest {
     fun `system layer resolves emoji when neither primary nor fallbacks cover it`() = runBlocking {
         if (!emojiFile.exists()) return@runBlocking
         val arabicFace = HbFace.from { bytes(arabicFile.readBytes()) }
-        val arabic = arabicFace.toFont(24f)
+        val arabic = arabicFace.toFont()
         try {
             val curated = listOf(emojiFile)
             val stack = TestableHbFontStack(
@@ -96,6 +96,7 @@ class HbFontStackSystemFallbackTest {
             try {
                 val paragraph = stack.shapeParagraph(
                     text = "Hi 😀",
+                    sizePx = 24f,
                     baseDirection = HbDirection.LTR,
                 )
                 paragraph.runs.forEach { run ->
@@ -129,7 +130,7 @@ class HbFontStackSystemFallbackTest {
             system = SystemFallback.None,
         )
         try {
-            val paragraph = stack.shapeParagraph("مرحبا", baseDirection = HbDirection.RTL)
+            val paragraph = stack.shapeParagraph("مرحبا", sizePx = 24f, baseDirection = HbDirection.RTL)
             val gids = paragraph.runs.flatMap { it.glyphs.map { g -> g.glyphId } }
             assertTrue(gids.all { it == 0 }, "expected all notdef without system fallback")
             paragraph.runs.forEach { assertSame(roboto, it.font) }
@@ -183,13 +184,13 @@ private class TestableHbFontStack(
         // mirror that here). The test then exercises the real shaping path
         // and we know it's our deterministic resolver answering.
         seedSharedSystemResolverForTest(
-            SystemFallback.Match(style = primary.styleHint),
+            SystemFallback.Match(style = primary.face.styleHint),
             systemResolver,
         )
     }
 
-    suspend fun shapeParagraph(text: String, baseDirection: HbDirection): ShapedParagraph =
-        real.shapeParagraph(text, baseDirection = baseDirection)
+    suspend fun shapeParagraph(text: String, sizePx: Float, baseDirection: HbDirection): ShapedParagraph =
+        real.shapeParagraph(text, sizePx = sizePx, baseDirection = baseDirection)
 
     override fun close() {
         // Resolver cleanup is shared across tests - see the AfterTest hook

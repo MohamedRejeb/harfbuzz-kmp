@@ -10,8 +10,10 @@ import kotlinx.coroutines.withContext
  */
 internal actual suspend fun HbFont.tryGlyphExtentsBatchNative(
     glyphIds: IntArray,
+    sizePx: Float,
 ): List<GlyphExtents?>? = withContext(harfbuzzDispatcher) {
     check(!isClosed) { "hb object disposed" }
+    HarfbuzzNative.fontSetPointSize(ptr, sizePx)
     val n = glyphIds.size
     val out = FloatArray(n * 4)
     HarfbuzzNative.fontGlyphExtentsBatch(ptr, glyphIds, out, n)

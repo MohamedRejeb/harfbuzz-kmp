@@ -362,7 +362,7 @@ class HorizontalPositionTest {
     ): MeasuredText {
         harfBuzzInit()
         val face = HbFace.fromBytes(fontBytes)
-        val font = face.toFont(sizePx)
+        val font = face.toFont()
         openHandles.add(font)
         openHandles.add(face)
         val stack = HbFontStack(font)
@@ -370,6 +370,7 @@ class HorizontalPositionTest {
         return buildMeasuredText(
             text = text,
             fontStack = stack,
+            sizePx = sizePx,
             features = emptyList(),
             direction = direction,
             language = HbLanguage.AUTO,
@@ -386,7 +387,7 @@ class HorizontalPositionTest {
     ): MeasuredText {
         harfBuzzInit()
         val face = HbFace.fromBytes(fontBytes)
-        val font = face.toFont(sizePx)
+        val font = face.toFont()
         openHandles.add(font)
         openHandles.add(face)
         val stack = HbFontStack(font)
@@ -394,6 +395,7 @@ class HorizontalPositionTest {
         return buildMeasuredTextWithJustify(
             text = text,
             fontStack = stack,
+            sizePx = sizePx,
             features = emptyList(),
             direction = direction,
             language = HbLanguage.AUTO,

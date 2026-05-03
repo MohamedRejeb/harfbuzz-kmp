@@ -53,23 +53,24 @@ class ShapedParagraphScreenshotTest {
         openFonts.clear()
     }
 
-    private fun loadFont(path: String, sizePx: Float): HbFont = runBlocking {
+    private fun loadFont(path: String, sizePx: Float): SizedFont = runBlocking {
         val bytes = readFontBytes(path)
         val face = HbFace.from { bytes(bytes) }
-        val font = face.toFont(sizePx)
+        val font = face.toFont()
         openFonts.add(font)
         openFonts.add(face)
-        font
+        SizedFont(font, sizePx)
     }
 
     @Test
     fun `latin paragraph wraps to multiple lines`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("paragraph_latin_wrap.png") {
             Stage {
                 ShapedParagraphText(
                     text = "The quick brown fox jumps over the lazy dog and runs away.",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     modifier = Modifier
                         .width(280.dp)
@@ -82,12 +83,13 @@ class ShapedParagraphScreenshotTest {
 
     @Test
     fun `latin paragraph centered alignment`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("paragraph_latin_center.png") {
             Stage {
                 ShapedParagraphText(
                     text = "Centered multi line typography sample text.",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     alignment = ParagraphAlignment.Center,
                     modifier = Modifier
@@ -101,12 +103,13 @@ class ShapedParagraphScreenshotTest {
 
     @Test
     fun `latin paragraph right alignment`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("paragraph_latin_right.png") {
             Stage {
                 ShapedParagraphText(
                     text = "Right aligned multi line typography sample text.",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     alignment = ParagraphAlignment.Right,
                     modifier = Modifier
@@ -120,12 +123,13 @@ class ShapedParagraphScreenshotTest {
 
     @Test
     fun `latin paragraph extra line spacing`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("paragraph_latin_line_spacing.png") {
             Stage {
                 ShapedParagraphText(
                     text = "Line one. Line two. Line three of the same paragraph.",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     lineSpacing = 12f,
                     modifier = Modifier
@@ -139,12 +143,13 @@ class ShapedParagraphScreenshotTest {
 
     @Test
     fun `latin paragraph hard line breaks`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("paragraph_latin_hard_breaks.png") {
             Stage {
                 ShapedParagraphText(
                     text = "First line\nSecond line\nThird line",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     modifier = Modifier
                         .width(360.dp)
@@ -157,12 +162,13 @@ class ShapedParagraphScreenshotTest {
 
     @Test
     fun `arabic paragraph wraps with rtl base direction`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 28f)
         rule.captureGolden("paragraph_arabic_wrap_rtl.png") {
             Stage {
                 ShapedParagraphText(
                     text = "هذا نص عربي تجريبي طويل لاختبار التفاف النصوص العربية على عدة أسطر متتالية.",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     direction = HbDirection.RTL,
                     modifier = Modifier
@@ -176,12 +182,13 @@ class ShapedParagraphScreenshotTest {
 
     @Test
     fun `arabic paragraph centered`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 28f)
         rule.captureGolden("paragraph_arabic_center.png") {
             Stage {
                 ShapedParagraphText(
                     text = "نص عربي تجريبي للاختبار. كلمات لعرض الخطوط العربية.",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     alignment = ParagraphAlignment.Center,
                     direction = HbDirection.RTL,
@@ -196,12 +203,13 @@ class ShapedParagraphScreenshotTest {
 
     @Test
     fun `arabic paragraph absolute left alignment`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 28f)
         rule.captureGolden("paragraph_arabic_left.png") {
             Stage {
                 ShapedParagraphText(
                     text = "نص عربي تجريبي للاختبار. كلمات لعرض الخطوط العربية.",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     alignment = ParagraphAlignment.Left,
                     direction = HbDirection.RTL,
@@ -216,12 +224,13 @@ class ShapedParagraphScreenshotTest {
 
     @Test
     fun `arabic paragraph absolute right alignment`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 28f)
         rule.captureGolden("paragraph_arabic_right.png") {
             Stage {
                 ShapedParagraphText(
                     text = "نص عربي تجريبي للاختبار. كلمات لعرض الخطوط العربية.",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     alignment = ParagraphAlignment.Right,
                     direction = HbDirection.RTL,
@@ -238,12 +247,13 @@ class ShapedParagraphScreenshotTest {
 
     @Test
     fun `latin justify with word spacing strategy`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("paragraph_latin_justify_wordspacing.png") {
             Stage {
                 ShapedParagraphText(
                     text = "The quick brown fox jumps over the lazy dog and runs away today.",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     alignment = ParagraphAlignment.Justify,
                     justification = JustificationStrategy.WordSpacing,
@@ -258,12 +268,13 @@ class ShapedParagraphScreenshotTest {
 
     @Test
     fun `arabic justify with kashida via mixed strategy`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 28f)
         rule.captureGolden("paragraph_arabic_justify_kashida.png") {
             Stage {
                 ShapedParagraphText(
                     text = "نص عربي تجريبي للاختبار. كلمات لاختبار التفاف الأسطر العربية.",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     alignment = ParagraphAlignment.Justify,
                     direction = HbDirection.RTL,
@@ -280,12 +291,13 @@ class ShapedParagraphScreenshotTest {
     @Test
     fun `arabic justify with word spacing strategy`() {
         // Compose-style: thin-space distribution even for Arabic content.
-        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 28f)
         rule.captureGolden("paragraph_arabic_justify_wordspacing.png") {
             Stage {
                 ShapedParagraphText(
                     text = "نص عربي تجريبي للاختبار. كلمات لاختبار التفاف الأسطر العربية.",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     alignment = ParagraphAlignment.Justify,
                     direction = HbDirection.RTL,
@@ -305,13 +317,14 @@ class ShapedParagraphScreenshotTest {
         // otherwise - exercises the per-line script dispatch.
         val arabic = loadFont(FontPath.ARABIC_REGULAR, 24f)
         val latin = loadFont(FontPath.LATIN_REGULAR, 24f)
-        val stack = HbFontStack(latin, listOf(arabic))
+        val stack = HbFontStack(latin.font, listOf(arabic.font))
         rule.captureGolden("paragraph_mixed_justify_mixed.png") {
             Stage {
                 ShapedParagraphText(
                     text = "Welcome to the typography studio. مرحبا بكم في الاستوديو. " +
                         "We support Arabic and Latin scripts together in one paragraph.",
                     fontStack = stack,
+                    sizePx = latin.sizePx,
                     color = Color.Black,
                     alignment = ParagraphAlignment.Justify,
                     justification = JustificationStrategy.Mixed,
@@ -328,13 +341,14 @@ class ShapedParagraphScreenshotTest {
     fun `mixed arabic and latin justify with word spacing strategy`() {
         val arabic = loadFont(FontPath.ARABIC_REGULAR, 24f)
         val latin = loadFont(FontPath.LATIN_REGULAR, 24f)
-        val stack = HbFontStack(latin, listOf(arabic))
+        val stack = HbFontStack(latin.font, listOf(arabic.font))
         rule.captureGolden("paragraph_mixed_justify_wordspacing.png") {
             Stage {
                 ShapedParagraphText(
                     text = "Welcome to the typography studio. مرحبا بكم في الاستوديو. " +
                         "We support Arabic and Latin scripts together in one paragraph.",
                     fontStack = stack,
+                    sizePx = latin.sizePx,
                     color = Color.Black,
                     alignment = ParagraphAlignment.Justify,
                     justification = JustificationStrategy.WordSpacing,

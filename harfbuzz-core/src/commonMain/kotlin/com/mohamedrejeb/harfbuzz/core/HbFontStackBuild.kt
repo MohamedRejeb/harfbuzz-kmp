@@ -34,6 +34,7 @@ import com.mohamedrejeb.harfbuzz.core.RecordedPaintOp.PushClipGlyph
  */
 public suspend fun HbFontStack.buildMeasured(
     text: String,
+    sizePx: Float,
     baseDirection: HbDirection = HbDirection.AUTO,
     features: List<HbFeature> = emptyList(),
     language: HbLanguage = HbLanguage.AUTO,
@@ -48,12 +49,12 @@ public suspend fun HbFontStack.buildMeasured(
             fontPasses = emptyList(),
         )
     }
-    tryBuildMeasuredFastPath(text, baseDirection, features, language, perFontFlags)?.let { return it }
+    tryBuildMeasuredFastPath(text, sizePx, baseDirection, features, language, perFontFlags)?.let { return it }
 
-    val paragraph = shapeParagraph(text, baseDirection, features, language)
+    val paragraph = shapeParagraph(text, sizePx, baseDirection, features, language)
     return MeasuredPass(
         paragraph = paragraph,
-        fontPasses = collectFontPassesViaSnapshot(paragraph, perFontFlags),
+        fontPasses = collectFontPassesViaSnapshot(paragraph, sizePx, perFontFlags),
         svgBytesPreSliced = nativeSlicesSvgInOt,
     )
 }
@@ -114,6 +115,7 @@ public fun defaultFlagsFor(font: HbFont): GlyphSnapshotFlags {
  */
 internal expect suspend fun HbFontStack.tryBuildMeasuredFastPath(
     text: String,
+    sizePx: Float,
     baseDirection: HbDirection,
     features: List<HbFeature>,
     language: HbLanguage,
@@ -130,6 +132,7 @@ internal expect suspend fun HbFontStack.tryBuildMeasuredFastPath(
  */
 private suspend fun HbFontStack.collectFontPassesViaSnapshot(
     paragraph: ShapedParagraph,
+    sizePx: Float,
     perFontFlags: List<GlyphSnapshotFlags>,
 ): List<MeasuredFontPass> {
     val contributing = LinkedHashSet<HbFont>().apply {
@@ -166,7 +169,7 @@ private suspend fun HbFontStack.collectFontPassesViaSnapshot(
         // actually uses.
         val flags = fontIndices[font]?.let { perFontFlags[it] } ?: defaultFlagsFor(font)
 
-        val first = font.snapshotGlyphs(gids.toIntArray(), flags)
+        val first = font.snapshotGlyphs(gids.toIntArray(), sizePx, flags)
         val flipped = HashMap<Int, String>(first.flippedPathSvg.size).apply { putAll(first.flippedPathSvg) }
         val raw = HashMap<Int, String>(first.rawPathSvg.size).apply { putAll(first.rawPathSvg) }
 
@@ -183,6 +186,7 @@ private suspend fun HbFontStack.collectFontPassesViaSnapshot(
         if (extras.isNotEmpty() && (flags.flippedPath || flags.rawPath)) {
             val extraSnap = font.snapshotGlyphs(
                 gids = extras.toIntArray(),
+                sizePx = sizePx,
                 flags = GlyphSnapshotFlags(flippedPath = flags.flippedPath, rawPath = flags.rawPath),
             )
             flipped.putAll(extraSnap.flippedPathSvg)

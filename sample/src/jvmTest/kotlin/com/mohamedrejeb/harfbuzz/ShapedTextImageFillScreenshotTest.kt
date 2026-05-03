@@ -60,24 +60,25 @@ class ShapedTextImageFillScreenshotTest {
         openFonts.clear()
     }
 
-    private fun loadFont(path: String, sizePx: Float): HbFont = runBlocking {
+    private fun loadFont(path: String, sizePx: Float): SizedFont = runBlocking {
         val bytes = readFontBytes(path)
         val face = HbFace.from { bytes(bytes) }
-        val font = face.toFont(sizePx)
+        val font = face.toFont()
         openFonts.add(font)
         openFonts.add(face)
-        font
+        SizedFont(font, sizePx)
     }
 
     @Test
     fun `latin image fill horizontal bands`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 64f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 64f)
         val image = makeBandedImage()
         rule.captureGolden("shaped_image_fill_latin_bands.png") {
             Stage {
                 ImageFilledShapedText(
                     text = "GRADIENT",
                     font = font,
+                    sizePx = sizePx,
                     image = image,
                     height = 80.dp,
                 )
@@ -87,13 +88,14 @@ class ShapedTextImageFillScreenshotTest {
 
     @Test
     fun `arabic image fill horizontal bands`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 64f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 64f)
         val image = makeBandedImage()
         rule.captureGolden("shaped_image_fill_arabic_bands.png") {
             Stage {
                 ImageFilledShapedText(
                     text = "نص عربي",
                     font = font,
+                    sizePx = sizePx,
                     image = image,
                     height = 96.dp,
                 )
@@ -108,13 +110,14 @@ class ShapedTextImageFillScreenshotTest {
         // top). The colour bands should run across every line so a
         // regression in per-line offset (forgetting to translate, or
         // mixing baseline with top) shows up immediately.
-        val font = loadFont(FontPath.LATIN_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 28f)
         val image = makeBandedImage(width = 600, height = 240)
         rule.captureGolden("paragraph_image_fill_latin_wrap.png") {
             Stage {
                 ImageFilledShapedParagraph(
                     text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor.",
                     font = font,
+                    sizePx = sizePx,
                     image = image,
                     boxWidth = 280.dp,
                     boxHeight = 160.dp,
@@ -130,13 +133,14 @@ class ShapedTextImageFillScreenshotTest {
         // silhouette only, so the result swaps the font's gradient
         // inks for the supplied image - good visual proof that the
         // mask is the silhouette, not the paint tree.
-        val font = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 56f)
+        val (font, sizePx) = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 56f)
         val image = makeBandedImage()
         rule.captureGolden("shaped_image_fill_aref_ruqaa_ink.png") {
             Stage {
                 ImageFilledShapedText(
                     text = "نص عربي",
                     font = font,
+                    sizePx = sizePx,
                     image = image,
                     height = 96.dp,
                 )
@@ -148,10 +152,11 @@ class ShapedTextImageFillScreenshotTest {
     private fun ImageFilledShapedText(
         text: String,
         font: HbFont,
+        sizePx: Float,
         image: ImageBitmap,
         height: androidx.compose.ui.unit.Dp,
     ) {
-        val loadState by rememberMeasuredText(text = text, font = font)
+        val loadState by rememberMeasuredText(text = text, font = font, sizePx = sizePx)
         val measured: MeasuredText? = (loadState as? MeasuredTextLoad.Ready)?.measured
         Box(
             modifier = Modifier
@@ -180,6 +185,7 @@ class ShapedTextImageFillScreenshotTest {
     private fun ImageFilledShapedParagraph(
         text: String,
         font: HbFont,
+        sizePx: Float,
         image: ImageBitmap,
         boxWidth: androidx.compose.ui.unit.Dp,
         boxHeight: androidx.compose.ui.unit.Dp,
@@ -188,6 +194,7 @@ class ShapedTextImageFillScreenshotTest {
         val loadState by rememberMeasuredParagraph(
             text = text,
             font = font,
+            sizePx = sizePx,
             maxWidth = widthPx,
             alignment = ParagraphAlignment.Start,
         )

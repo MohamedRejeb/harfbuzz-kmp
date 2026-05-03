@@ -7,10 +7,12 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.DrawStyle
 import androidx.compose.ui.graphics.drawscope.Fill
 import com.mohamedrejeb.harfbuzz.core.HbDirection
+import com.mohamedrejeb.harfbuzz.core.HbFace
 import com.mohamedrejeb.harfbuzz.core.HbFeature
 import com.mohamedrejeb.harfbuzz.core.HbFont
 import com.mohamedrejeb.harfbuzz.core.HbFontStack
 import com.mohamedrejeb.harfbuzz.core.HbLanguage
+import com.mohamedrejeb.harfbuzz.core.HbVariation
 import com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy
 import com.mohamedrejeb.harfbuzz.core.paragraph.ParagraphAlignment
 
@@ -21,12 +23,10 @@ import com.mohamedrejeb.harfbuzz.core.paragraph.ParagraphAlignment
  * instance can drive many widgets ("body" / "heading" / "caption")
  * without repeating the full paint stack at each use.
  *
- * The font's size is currently baked into the [HbFont] (and
- * [HbFontStack]) you feed in - [face.toFont(sizePx)][com.mohamedrejeb.harfbuzz.core.HbFace.toFont]
- * derives a sized font from a face. A follow-up moves font size off
- * [HbFont] so a single face-derived font can render at any size; until
- * then, build the font at the size you want and copy this style for
- * paint-only changes.
+ * [HbFont] is sizeless: a single face-derived font can render at any
+ * size, and [fontSize] selects the per-style render size. Mirrors
+ * Compose's `TextStyle.fontSize` convention - one font, many sizes
+ * via `style.copy(fontSize = ...)`.
  */
 @Immutable
 public data class ShapedTextStyle(
@@ -36,6 +36,12 @@ public data class ShapedTextStyle(
      * wraps it in a one-element stack.
      */
     public val fontStack: HbFontStack,
+    /**
+     * Pixel size to shape and render at. With sizeless [HbFont]s the
+     * size lives on the style, mirroring Compose's `TextStyle.fontSize`
+     * convention - one font, many sizes.
+     */
+    public val fontSize: Float,
     /**
      * Solid fill colour for monochrome glyphs and COLR v0 foreground-
      * colour layers. Defaults to [Color.Unspecified] so call sites
@@ -97,6 +103,7 @@ public data class ShapedTextStyle(
  */
 public fun ShapedTextStyle(
     font: HbFont,
+    fontSize: Float,
     color: Color = Color.Unspecified,
     brush: Brush? = null,
     alignment: ParagraphAlignment = ParagraphAlignment.Start,
@@ -110,6 +117,49 @@ public fun ShapedTextStyle(
     forceForegroundColor: Boolean = false,
 ): ShapedTextStyle = ShapedTextStyle(
     fontStack = HbFontStack(font),
+    fontSize = fontSize,
+    color = color,
+    brush = brush,
+    alignment = alignment,
+    justification = justification,
+    overflow = overflow,
+    features = features,
+    direction = direction,
+    language = language,
+    style = style,
+    shadow = shadow,
+    forceForegroundColor = forceForegroundColor,
+)
+
+/**
+ * Build a [ShapedTextStyle] directly from an [HbFace] at [fontSize],
+ * minting the underlying [HbFont] for you. Equivalent to calling
+ * [HbFace.toFont] and then the [HbFont]-based factory above; this
+ * suspend overload exists so simple call sites don't have to manage
+ * the intermediate font handle themselves.
+ *
+ * The minted [HbFont] is owned by the resulting style's [HbFontStack]
+ * and shares the lifetime of the face's resources - close the face
+ * (or recreate the style) when you're done.
+ */
+public suspend fun ShapedTextStyle(
+    face: HbFace,
+    fontSize: Float,
+    variations: List<HbVariation> = emptyList(),
+    color: Color = Color.Unspecified,
+    brush: Brush? = null,
+    alignment: ParagraphAlignment = ParagraphAlignment.Start,
+    justification: JustificationStrategy = JustificationStrategy.None,
+    overflow: ShapedTextOverflow = ShapedTextOverflow.Clip,
+    features: List<HbFeature> = emptyList(),
+    direction: HbDirection = HbDirection.AUTO,
+    language: HbLanguage = HbLanguage.AUTO,
+    style: DrawStyle = Fill,
+    shadow: Shadow? = null,
+    forceForegroundColor: Boolean = false,
+): ShapedTextStyle = ShapedTextStyle(
+    font = if (variations.isEmpty()) face.toFont() else face.toFont(variations),
+    fontSize = fontSize,
     color = color,
     brush = brush,
     alignment = alignment,

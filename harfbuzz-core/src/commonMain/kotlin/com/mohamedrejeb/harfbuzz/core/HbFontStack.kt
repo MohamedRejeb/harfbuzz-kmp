@@ -57,7 +57,7 @@ public class HbFontStack(
         // Inherit the primary font's style when the caller didn't pin one.
         // Resolved here so each platform resolver can rely on `match.style`
         // being non-null without poking at HbFont metadata itself.
-        val effectiveStyle = match.style ?: primary.styleHint
+        val effectiveStyle = match.style ?: primary.face.styleHint
         return sharedSystemResolverFor(match.copy(style = effectiveStyle))
     }
 
@@ -106,16 +106,12 @@ public class HbFontStack(
      *   Thai, and emoji. Pass a smaller subset for apps that only
      *   render a known script subset (e.g. an Arabic-only app passes
      *   `intArrayOf(0x0644)`).
-     * @param pointSize The size minted by the resolver. Doesn't have
-     *   to match the size you'll actually render at - the resolver
-     *   caches by face and mints additional sizes lazily on demand.
      */
     public suspend fun prewarmSystemFallback(
         codepoints: IntArray = DEFAULT_PREWARM_CODEPOINTS,
-        pointSize: Float = 16f,
     ) {
         val resolver = systemResolverOrNull() ?: return
-        resolver.prewarm(codepoints, pointSize)
+        resolver.prewarm(codepoints)
     }
 
     public companion object {

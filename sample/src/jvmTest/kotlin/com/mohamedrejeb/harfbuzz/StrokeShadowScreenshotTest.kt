@@ -52,23 +52,24 @@ class StrokeShadowScreenshotTest {
         openFonts.clear()
     }
 
-    private fun loadFont(path: String, sizePx: Float): HbFont = runBlocking {
+    private fun loadFont(path: String, sizePx: Float): SizedFont = runBlocking {
         val bytes = readFontBytes(path)
         val face = HbFace.from { bytes(bytes) }
-        val font = face.toFont(sizePx)
+        val font = face.toFont()
         openFonts.add(font)
         openFonts.add(face)
-        font
+        SizedFont(font, sizePx)
     }
 
     @Test
     fun `stroke latin roboto 3px`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 36f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 36f)
         rule.captureGolden("stroke_latin_roboto_3px.png") {
             Stage {
                 ShapedText(
                     text = "Stroked Hello",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     style = Stroke(width = 3f),
                     modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -79,12 +80,13 @@ class StrokeShadowScreenshotTest {
 
     @Test
     fun `stroke latin roboto 1px thin`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 36f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 36f)
         rule.captureGolden("stroke_latin_roboto_1px.png") {
             Stage {
                 ShapedText(
                     text = "Thin stroke",
                     font = font,
+                    sizePx = sizePx,
                     color = Color(0xFF1A237E),
                     style = Stroke(width = 1f),
                     modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -95,12 +97,13 @@ class StrokeShadowScreenshotTest {
 
     @Test
     fun `stroke arabic naskh 2px`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 36f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 36f)
         rule.captureGolden("stroke_arabic_naskh_2px.png") {
             Stage {
                 ShapedText(
                     text = "نص عربي",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     style = Stroke(width = 2f),
                     modifier = Modifier.fillMaxWidth().height(56.dp),
@@ -111,12 +114,13 @@ class StrokeShadowScreenshotTest {
 
     @Test
     fun `stroke aref ruqaa ink falls back to outline`() {
-        val font = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 40f)
+        val (font, sizePx) = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 40f)
         rule.captureGolden("stroke_aref_ruqaa_ink_outline.png") {
             Stage {
                 ShapedText(
                     text = "نص عربي تجريبي للاختبار",
                     font = font,
+                    sizePx = sizePx,
                     color = Color(0xFFB00020),
                     style = Stroke(width = 2f),
                     modifier = Modifier.fillMaxWidth().height(64.dp),
@@ -127,12 +131,13 @@ class StrokeShadowScreenshotTest {
 
     @Test
     fun `stroke emoji falls back to outline`() {
-        val font = loadFont(FontPath.EMOJI, 56f)
+        val (font, sizePx) = loadFont(FontPath.EMOJI, 56f)
         rule.captureGolden("stroke_emoji_outline.png") {
             Stage {
                 ShapedText(
                     text = "😀🌍🎉⭐",
                     font = font,
+                    sizePx = sizePx,
                     color = Color(0xFF263238),
                     style = Stroke(width = 2f),
                     modifier = Modifier.fillMaxWidth().height(80.dp),
@@ -143,12 +148,13 @@ class StrokeShadowScreenshotTest {
 
     @Test
     fun `shadow latin offset blur`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 36f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 36f)
         rule.captureGolden("shadow_latin_offset_blur.png") {
             Stage {
                 ShapedText(
                     text = "Drop shadow",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     shadow = Shadow(
                         color = Color(0x80000000),
@@ -163,12 +169,13 @@ class StrokeShadowScreenshotTest {
 
     @Test
     fun `shadow arabic naskh offset blur`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 36f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 36f)
         rule.captureGolden("shadow_arabic_naskh_offset_blur.png") {
             Stage {
                 ShapedText(
                     text = "نص عربي",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     shadow = Shadow(
                         color = Color(0x80000000),
@@ -183,12 +190,13 @@ class StrokeShadowScreenshotTest {
 
     @Test
     fun `shadow no blur sharp offset`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 36f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 36f)
         rule.captureGolden("shadow_latin_offset_no_blur.png") {
             Stage {
                 ShapedText(
                     text = "Sharp shadow",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     shadow = Shadow(
                         color = Color(0xFFB00020),
@@ -203,12 +211,13 @@ class StrokeShadowScreenshotTest {
 
     @Test
     fun `shadow large blur soft glow`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 40f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 40f)
         rule.captureGolden("shadow_latin_large_blur.png") {
             Stage {
                 ShapedText(
                     text = "Soft glow",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     shadow = Shadow(
                         color = Color(0x80000000),
@@ -223,12 +232,13 @@ class StrokeShadowScreenshotTest {
 
     @Test
     fun `shadow on aref ruqaa ink silhouette`() {
-        val font = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 40f)
+        val (font, sizePx) = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 40f)
         rule.captureGolden("shadow_aref_ruqaa_ink_silhouette.png") {
             Stage {
                 ShapedText(
                     text = "نص عربي",
                     font = font,
+                    sizePx = sizePx,
                     color = Color(0xFFB00020),
                     shadow = Shadow(
                         color = Color(0x66000000),
@@ -243,12 +253,13 @@ class StrokeShadowScreenshotTest {
 
     @Test
     fun `shadow on emoji silhouette`() {
-        val font = loadFont(FontPath.EMOJI, 56f)
+        val (font, sizePx) = loadFont(FontPath.EMOJI, 56f)
         rule.captureGolden("shadow_emoji_silhouette.png") {
             Stage {
                 ShapedText(
                     text = "😀🌍🎉",
                     font = font,
+                    sizePx = sizePx,
                     shadow = Shadow(
                         color = Color(0x80000000),
                         offset = Offset(3f, 3f),
@@ -262,12 +273,13 @@ class StrokeShadowScreenshotTest {
 
     @Test
     fun `stroke with shadow combined`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 40f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 40f)
         rule.captureGolden("stroke_with_shadow_combined.png") {
             Stage {
                 ShapedText(
                     text = "Outlined glow",
                     font = font,
+                    sizePx = sizePx,
                     color = Color(0xFF1A237E),
                     style = Stroke(width = 2f),
                     shadow = Shadow(
@@ -291,13 +303,14 @@ class StrokeShadowScreenshotTest {
      */
     @Test
     fun `fill plus stroke layered`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 48f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 48f)
         rule.captureGolden("fill_plus_stroke_layered.png") {
             Stage {
                 Box(modifier = Modifier.fillMaxWidth().height(64.dp)) {
                     ShapedText(
                         text = "Fill + Stroke",
                         font = font,
+                        sizePx = sizePx,
                         color = Color(0xFF263238),
                         style = Stroke(width = 3f),
                         modifier = Modifier.fillMaxWidth().height(64.dp),
@@ -305,6 +318,7 @@ class StrokeShadowScreenshotTest {
                     ShapedText(
                         text = "Fill + Stroke",
                         font = font,
+                        sizePx = sizePx,
                         color = Color(0xFFFFC107),
                         modifier = Modifier.fillMaxWidth().height(64.dp),
                     )
@@ -320,13 +334,14 @@ class StrokeShadowScreenshotTest {
      */
     @Test
     fun `fill plus stroke plus shadow layered`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 48f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 48f)
         rule.captureGolden("fill_plus_stroke_plus_shadow_layered.png") {
             Stage {
                 Box(modifier = Modifier.fillMaxWidth().height(72.dp)) {
                     ShapedText(
                         text = "Bold poster",
                         font = font,
+                        sizePx = sizePx,
                         color = Color(0xFF263238),
                         style = Stroke(width = 4f),
                         shadow = Shadow(
@@ -339,6 +354,7 @@ class StrokeShadowScreenshotTest {
                     ShapedText(
                         text = "Bold poster",
                         font = font,
+                        sizePx = sizePx,
                         color = Color(0xFFFFC107),
                         modifier = Modifier.fillMaxWidth().height(72.dp),
                     )
@@ -353,13 +369,14 @@ class StrokeShadowScreenshotTest {
      */
     @Test
     fun `fill plus stroke plus shadow arabic`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 48f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 48f)
         rule.captureGolden("fill_plus_stroke_plus_shadow_arabic.png") {
             Stage {
                 Box(modifier = Modifier.fillMaxWidth().height(80.dp)) {
                     ShapedText(
                         text = "نص عربي",
                         font = font,
+                        sizePx = sizePx,
                         color = Color(0xFF1B5E20),
                         style = Stroke(width = 4f),
                         shadow = Shadow(
@@ -372,6 +389,7 @@ class StrokeShadowScreenshotTest {
                     ShapedText(
                         text = "نص عربي",
                         font = font,
+                        sizePx = sizePx,
                         color = Color(0xFFFFD54F),
                         modifier = Modifier.fillMaxWidth().height(80.dp),
                     )

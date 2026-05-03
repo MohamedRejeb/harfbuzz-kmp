@@ -29,6 +29,7 @@ import kotlin.coroutines.cancellation.CancellationException
 public fun rememberMeasuredParagraph(
     text: String,
     font: HbFont,
+    sizePx: Float,
     maxWidth: Float,
     alignment: ParagraphAlignment = ParagraphAlignment.Start,
     direction: HbDirection = HbDirection.AUTO,
@@ -41,6 +42,7 @@ public fun rememberMeasuredParagraph(
     return rememberMeasuredParagraph(
         text = text,
         fontStack = stack,
+        sizePx = sizePx,
         maxWidth = maxWidth,
         alignment = alignment,
         direction = direction,
@@ -61,6 +63,7 @@ public fun rememberMeasuredParagraph(
 public fun rememberMeasuredParagraph(
     text: String,
     fontStack: HbFontStack,
+    sizePx: Float,
     maxWidth: Float,
     alignment: ParagraphAlignment = ParagraphAlignment.Start,
     direction: HbDirection = HbDirection.AUTO,
@@ -71,13 +74,14 @@ public fun rememberMeasuredParagraph(
 ): State<MeasuredParagraphLoad> {
     return produceState<MeasuredParagraphLoad>(
         initialValue = MeasuredParagraphLoad.Loading,
-        text, fontStack, maxWidth, alignment, direction, features, language, lineSpacing, justification,
+        text, fontStack, sizePx, maxWidth, alignment, direction, features, language, lineSpacing, justification,
     ) {
         value = MeasuredParagraphLoad.Loading
         try {
             val measured = buildMeasuredParagraph(
                 text = text,
                 fontStack = fontStack,
+                sizePx = sizePx,
                 maxWidth = maxWidth,
                 alignment = alignment,
                 direction = direction,
@@ -106,6 +110,7 @@ private fun isStaleHbHandle(cause: Throwable): Boolean =
 internal suspend fun buildMeasuredParagraph(
     text: String,
     fontStack: HbFontStack,
+    sizePx: Float,
     maxWidth: Float,
     alignment: ParagraphAlignment,
     direction: HbDirection,
@@ -118,6 +123,7 @@ internal suspend fun buildMeasuredParagraph(
 
     val layout: LaidOutParagraph = fontStack.layoutParagraph(
         text = text,
+        sizePx = sizePx,
         maxWidth = maxWidth,
         alignment = alignment,
         baseDirection = direction,
@@ -137,6 +143,7 @@ internal suspend fun buildMeasuredParagraph(
         val measured = buildMeasuredText(
             text = lineSourceText,
             fontStack = fontStack,
+            sizePx = sizePx,
             features = features,
             direction = layout.baseDirection,
             language = language,

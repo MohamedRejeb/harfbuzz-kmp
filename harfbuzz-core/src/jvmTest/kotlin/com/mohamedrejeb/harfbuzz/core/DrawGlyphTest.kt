@@ -24,12 +24,12 @@ class DrawGlyphTest {
             return@runBlocking
         }
         HbFace.from { bytes(bytes) }.use { face ->
-            face.toFont(16f).use { font ->
+            face.toFont().use { font ->
                 val gid = font.glyphIdForCodepoint('O'.code)
                 if (gid == 0) return@use  // font lacks glyph
 
                 val sink = RecordingSink()
-                font.drawGlyph(gid, sink)
+                font.drawGlyph(gid, sizePx = 16f, sink = sink)
 
                 val moves = sink.commands.count { it.startsWith("M ") }
                 val closes = sink.commands.count { it == "Z" }

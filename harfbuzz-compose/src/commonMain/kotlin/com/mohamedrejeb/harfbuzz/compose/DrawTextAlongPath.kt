@@ -111,6 +111,7 @@ public fun DrawScope.drawTextAlongPath(
                         ) {
                             drawOneGlyphAtOrigin(
                                 runFont = p.runFont,
+                                sizePx = measured.sizePx,
                                 caches = caches,
                                 glyphId = p.run.glyphs[p.glyphIndexInRun].glyphId,
                                 color = color,

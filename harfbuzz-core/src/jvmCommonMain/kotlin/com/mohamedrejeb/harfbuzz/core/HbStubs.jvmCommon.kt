@@ -4,6 +4,18 @@ import kotlin.coroutines.EmptyCoroutineContext
 import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.withContext
 
+/**
+ * Initial point-size minted on freshly-created hb_font_t handles before
+ * any shaping work. Each shape / glyph call resets the scale to its
+ * caller-supplied sizePx, so this value is only the seed scale at
+ * fontCreate / fontCreateWithVariations time. Picked to be `1.0f` so
+ * the underlying scale equals 64 (1 pixel x 64 subpixel units), which
+ * exercises the same code path as a real shaping size and keeps any
+ * style-value query (which divides design-units by scale) numerically
+ * well-behaved.
+ */
+private const val DESIGN_SCALE_POINT_SIZE: Float = 1f
+
 // ───── HbBlob ──────────────────────────────────────────────────────────────
 
 public actual class HbBlob internal constructor(
@@ -78,27 +90,51 @@ public actual class HbFace internal constructor(
         return HarfbuzzNative.faceHasColorSvg(ptr) != 0
     }
 
-    public actual suspend fun toFont(pointSize: Float): HbFont = withContext(harfbuzzDispatcher) {
+    public actual suspend fun toFont(): HbFont = withContext(harfbuzzDispatcher) {
         check(!closed) { "hb object disposed" }
-        val fontPtr = HarfbuzzNative.fontCreate(ptr, pointSize)
+        val fontPtr = HarfbuzzNative.fontCreate(ptr, DESIGN_SCALE_POINT_SIZE)
         check(fontPtr != 0L) { "fontCreate returned null pointer" }
-        val font = HbFont(this@HbFace, fontPtr, pointSize)
+        val font = HbFont(this@HbFace, fontPtr)
         warmFont(font)
         font
     }
 
-    public actual suspend fun toFont(pointSize: Float, variations: List<HbVariation>): HbFont =
+    public actual suspend fun toFont(variations: List<HbVariation>): HbFont =
         withContext(harfbuzzDispatcher) {
             check(!closed) { "hb object disposed" }
-            if (variations.isEmpty()) return@withContext toFont(pointSize)
+            if (variations.isEmpty()) return@withContext toFont()
             val tags = IntArray(variations.size) { variations[it].tag.raw.toInt() }
             val values = FloatArray(variations.size) { variations[it].value }
-            val fontPtr = HarfbuzzNative.fontCreateWithVariations(ptr, pointSize, tags, values)
+            val fontPtr = HarfbuzzNative.fontCreateWithVariations(ptr, DESIGN_SCALE_POINT_SIZE, tags, values)
             check(fontPtr != 0L) { "fontCreateWithVariations returned null pointer" }
-            val font = HbFont(this@HbFace, fontPtr, pointSize)
+            val font = HbFont(this@HbFace, fontPtr)
             warmFont(font)
             font
         }
+
+    @Volatile
+    private var metaFontPtr: Long = 0L
+
+    private fun ensureMetaFontPtr(): Long {
+        if (metaFontPtr != 0L) return metaFontPtr
+        val p = HarfbuzzNative.fontCreate(ptr, DESIGN_SCALE_POINT_SIZE)
+        check(p != 0L) { "fontCreate returned null pointer" }
+        metaFontPtr = p
+        return p
+    }
+
+    public actual val styleHint: FontStyleHint by lazy {
+        if (closed) return@lazy FontStyleHint()
+        val mp = ensureMetaFontPtr()
+        val weight = HarfbuzzNative.fontStyleValue(mp, HB_STYLE_TAG_WEIGHT)
+        val italic = HarfbuzzNative.fontStyleValue(mp, HB_STYLE_TAG_ITALIC)
+        val width = HarfbuzzNative.fontStyleValue(mp, HB_STYLE_TAG_WIDTH)
+        FontStyleHint(
+            weight = if (weight > 0f) weight.toInt().coerceIn(1, 1000) else 400,
+            italic = italic > 0.5f,
+            width = if (width > 0f) width else 1f,
+        )
+    }
 
     public actual fun variationAxes(): List<HbVariationAxis> {
         check(!closed) { "hb object disposed" }
@@ -134,9 +170,14 @@ public actual class HbFace internal constructor(
     actual override fun close() {
         if (closed) return
         closed = true
-        // Same race-window reasoning as HbFont.close() - see comment there.
         val p = ptr
-        harfbuzzDispatcher.dispatch(EmptyCoroutineContext, Runnable { HarfbuzzNative.faceDestroy(p) })
+        val mp = metaFontPtr
+        metaFontPtr = 0L
+        // Same race-window reasoning as HbFont.close() - see comment there.
+        harfbuzzDispatcher.dispatch(EmptyCoroutineContext, Runnable {
+            if (mp != 0L) HarfbuzzNative.fontDestroy(mp)
+            HarfbuzzNative.faceDestroy(p)
+        })
     }
 
     public actual companion object {
@@ -196,18 +237,20 @@ public actual class HbFace internal constructor(
 public actual class HbFont internal constructor(
     public actual val face: HbFace,
     internal val ptr: Long,
-    pointSizeInit: Float,
 ) : AutoCloseable {
     private var closed: Boolean = false
 
-    public actual var pointSize: Float = pointSizeInit
-        set(value) {
-            check(!closed) { "hb object disposed" }
-            HarfbuzzNative.fontSetPointSize(ptr, value)
-            field = value
-        }
-
     public actual val isClosed: Boolean get() = closed
+
+    /**
+     * Set the underlying hb_font_t scale to [sizePx]. Caller must already
+     * be on [harfbuzzDispatcher]; this performs no synchronisation of
+     * its own. Used by every size-dependent path right before invoking
+     * the relevant JNI primitive.
+     */
+    private fun setScale(sizePx: Float) {
+        HarfbuzzNative.fontSetPointSize(ptr, sizePx)
+    }
 
     public actual suspend fun glyphIdForCodepoint(codepoint: Int): Int =
         withContext(harfbuzzDispatcher) {
@@ -215,15 +258,17 @@ public actual class HbFont internal constructor(
             HarfbuzzNative.fontGlyphForCodepoint(ptr, codepoint)
         }
 
-    public actual suspend fun glyphAdvance(glyphId: Int): Float =
+    public actual suspend fun glyphAdvance(glyphId: Int, sizePx: Float): Float =
         withContext(harfbuzzDispatcher) {
             check(!closed) { "hb object disposed" }
+            setScale(sizePx)
             HarfbuzzNative.fontGlyphHAdvance(ptr, glyphId)
         }
 
-    public actual suspend fun glyphExtents(glyphId: Int): GlyphExtents? =
+    public actual suspend fun glyphExtents(glyphId: Int, sizePx: Float): GlyphExtents? =
         withContext(harfbuzzDispatcher) {
             check(!closed) { "hb object disposed" }
+            setScale(sizePx)
             val out = FloatArray(4)
             val ok = HarfbuzzNative.fontGlyphExtents(ptr, glyphId, out)
             if (ok == 0) return@withContext null
@@ -235,36 +280,22 @@ public actual class HbFont internal constructor(
             )
         }
 
-    // Lazy so the JNI call doesn't run at HbFont construction - that
-    // shifts the cost to first read, which is always a `runShapingWork`
-    // caller (`buildMeasuredText`'s line-metric block). One JNI hop saved
-    // per HbFont in the cold-start critical path.
-    public actual val hExtents: FontExtents? by lazy {
-        if (closed) return@lazy null
-        val out = FloatArray(3)
-        if (HarfbuzzNative.fontHExtents(ptr, out) == 0) null
-        else FontExtents(ascender = out[0], descender = out[1], lineGap = out[2])
-    }
+    public actual suspend fun hExtents(sizePx: Float): FontExtents? =
+        withContext(harfbuzzDispatcher) {
+            check(!closed) { "hb object disposed" }
+            setScale(sizePx)
+            val out = FloatArray(3)
+            if (HarfbuzzNative.fontHExtents(ptr, out) == 0) null
+            else FontExtents(ascender = out[0], descender = out[1], lineGap = out[2])
+        }
 
     // JVM `StringPathSink` records pixel-space coords; no conversion needed.
     public actual val pathScale: Float = 1f
 
-    public actual val styleHint: FontStyleHint by lazy {
-        if (closed) return@lazy FontStyleHint()
-        val weight = HarfbuzzNative.fontStyleValue(ptr, HB_STYLE_TAG_WEIGHT)
-        val italic = HarfbuzzNative.fontStyleValue(ptr, HB_STYLE_TAG_ITALIC)
-        val width = HarfbuzzNative.fontStyleValue(ptr, HB_STYLE_TAG_WIDTH)
-        FontStyleHint(
-            weight = if (weight > 0f) weight.toInt().coerceIn(1, 1000) else 400,
-            italic = italic > 0.5f,
-            width = if (width > 0f) width else 1f,
-        )
-    }
-
     public actual suspend fun glyphColorLayers(glyphId: Int): List<ColorLayer> =
         withContext(harfbuzzDispatcher) {
             check(!closed) { "hb object disposed" }
-            // Probe count first.
+            // Color-layer structure is sizeless (face-level OT-COLR table data).
             val total = HarfbuzzNative.fontGlyphColorLayers(ptr, glyphId, null, null, 0)
             if (total <= 0) return@withContext emptyList()
             val capped = minOf(total, 64)
@@ -278,38 +309,43 @@ public actual class HbFont internal constructor(
             }
         }
 
-    public actual suspend fun shape(buffer: HbBuffer): ShapedRun =
+    public actual suspend fun shape(buffer: HbBuffer, sizePx: Float): ShapedRun =
         withContext(harfbuzzDispatcher) {
             check(!closed) { "hb object disposed" }
-            val rendered = ShapingHelpers.shapeBufferIntoRun(this@HbFont, buffer, buffer.features)
-            rendered
+            setScale(sizePx)
+            ShapingHelpers.shapeBufferIntoRun(this@HbFont, buffer, buffer.features, sizePx)
         }
 
     public actual suspend fun shapeParagraph(
         text: String,
+        sizePx: Float,
         baseDirection: HbDirection,
         features: List<HbFeature>,
         language: HbLanguage,
     ): ShapedParagraph = withContext(harfbuzzDispatcher) {
         check(!closed) { "hb object disposed" }
-        ShapingHelpers.shapeParagraph(this@HbFont, text, baseDirection, features, language)
+        setScale(sizePx)
+        ShapingHelpers.shapeParagraph(this@HbFont, text, sizePx, baseDirection, features, language)
     }
 
-    public actual suspend fun drawGlyph(glyphId: Int, sink: HbPathSink) {
+    public actual suspend fun drawGlyph(glyphId: Int, sizePx: Float, sink: HbPathSink) {
         withContext(harfbuzzDispatcher) {
             check(!closed) { "hb object disposed" }
+            setScale(sizePx)
             ShapingHelpers.drawGlyph(this@HbFont, glyphId, sink)
         }
     }
 
     public actual suspend fun paintGlyph(
         glyphId: Int,
+        sizePx: Float,
         foreground: Int,
         paletteIndex: Int,
         sink: HbPaintSink,
     ) {
         withContext(harfbuzzDispatcher) {
             check(!closed) { "hb object disposed" }
+            setScale(sizePx)
             val buf = HarfbuzzNative.fontPaintGlyph(ptr, glyphId, foreground, paletteIndex)
                 ?: return@withContext
             PaintBufferParser.dispatch(buf, sink)
@@ -319,14 +355,17 @@ public actual class HbFont internal constructor(
     public actual suspend fun glyphSvg(glyphId: Int): ByteArray? =
         withContext(harfbuzzDispatcher) {
             check(!closed) { "hb object disposed" }
+            // SVG documents live on the face's `SVG ` table; sizeless.
             HarfbuzzNative.fontGlyphSvg(ptr, glyphId)
         }
 
     public actual suspend fun snapshotGlyphs(
         gids: IntArray,
+        sizePx: Float,
         flags: GlyphSnapshotFlags,
     ): GlyphSnapshot = withContext(harfbuzzDispatcher) {
         check(!closed) { "hb object disposed" }
+        setScale(sizePx)
         val flipped = if (flags.flippedPath) HashMap<Int, String>(gids.size) else null
         val raw = if (flags.rawPath) HashMap<Int, String>(gids.size) else null
         val layers = if (flags.colorLayers) HashMap<Int, List<ColorLayer>>(gids.size) else null

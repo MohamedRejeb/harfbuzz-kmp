@@ -48,6 +48,7 @@ import kotlin.math.ceil
 public fun ShapedText(
     text: String,
     font: HbFont,
+    sizePx: Float,
     modifier: Modifier = Modifier,
     color: Color = Color.Unspecified,
     /**
@@ -94,6 +95,7 @@ public fun ShapedText(
     ShapedText(
         text = text,
         fontStack = stack,
+        sizePx = sizePx,
         modifier = modifier,
         color = color,
         brush = brush,
@@ -119,6 +121,7 @@ public fun ShapedText(
 public fun ShapedText(
     text: String,
     fontStack: HbFontStack,
+    sizePx: Float,
     modifier: Modifier = Modifier,
     color: Color = Color.Unspecified,
     brush: Brush? = null,
@@ -145,6 +148,7 @@ public fun ShapedText(
             ShapedTextBody(
                 text = text,
                 fontStack = fontStack,
+                sizePx = sizePx,
                 modifier = Modifier,
                 color = color,
                 brush = brush,
@@ -164,6 +168,7 @@ public fun ShapedText(
         ShapedTextBody(
             text = text,
             fontStack = fontStack,
+            sizePx = sizePx,
             modifier = modifier,
             color = color,
             brush = brush,
@@ -185,6 +190,7 @@ public fun ShapedText(
 private fun ShapedTextBody(
     text: String,
     fontStack: HbFontStack,
+    sizePx: Float,
     modifier: Modifier,
     color: Color,
     brush: Brush?,
@@ -202,6 +208,7 @@ private fun ShapedTextBody(
     val loadState by rememberMeasuredText(
         text = text,
         fontStack = fontStack,
+        sizePx = sizePx,
         features = features,
         direction = direction,
         maxWidth = justifyMaxWidth,

@@ -24,10 +24,10 @@ class HarfbuzzConcurrencyTest {
     fun `four parallel shapeParagraph calls produce identical output`() = runBlocking {
         harfBuzzInit()
         val face = HbFace.fromBytes(TestFonts.robotoRegular())
-        val font = face.toFont(24f)
+        val font = face.toFont()
         try {
             val results = (1..4)
-                .map { async { font.shapeParagraph("Hello, world") } }
+                .map { async { font.shapeParagraph("Hello, world", sizePx = 24f) } }
                 .awaitAll()
             val first = results.first()
             for (other in results.drop(1)) {

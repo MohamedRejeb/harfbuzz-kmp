@@ -505,6 +505,7 @@ internal fun DrawScope.drawShapedTextInternal(
             if (combinedBrushPath != null) {
                 drawOneGlyphForBrush(
                     runFont = runFont,
+                    sizePx = measured.sizePx,
                     caches = caches,
                     glyphId = gid,
                     drawX = drawX,
@@ -519,6 +520,7 @@ internal fun DrawScope.drawShapedTextInternal(
                 translate(left = drawX, top = drawY) {
                     drawOneGlyphAtOrigin(
                         runFont = runFont,
+                        sizePx = measured.sizePx,
                         caches = caches,
                         glyphId = gid,
                         color = color,
@@ -656,6 +658,7 @@ internal fun applyDrawStyleToPaint(paint: Paint, style: DrawStyle) {
  */
 internal fun DrawScope.drawOneGlyphAtOrigin(
     runFont: HbFont,
+    sizePx: Float,
     caches: RunGlyphCaches,
     glyphId: Int,
     color: Color,
@@ -674,7 +677,7 @@ internal fun DrawScope.drawOneGlyphAtOrigin(
     if (svgRender != null) {
         drawSvgGlyphBitmap(
             render = svgRender,
-            pointSize = runFont.pointSize,
+            pointSize = sizePx,
             upem = runFont.face.upem,
             alpha = alpha,
             blendMode = blendMode,
@@ -731,6 +734,7 @@ internal fun DrawScope.drawOneGlyphAtOrigin(
  */
 private fun DrawScope.drawOneGlyphForBrush(
     runFont: HbFont,
+    sizePx: Float,
     caches: RunGlyphCaches,
     glyphId: Int,
     drawX: Float,
@@ -753,7 +757,7 @@ private fun DrawScope.drawOneGlyphForBrush(
         translate(left = drawX, top = drawY) {
             drawSvgGlyphBitmap(
                 render = svgRender,
-                pointSize = runFont.pointSize,
+                pointSize = sizePx,
                 upem = runFont.face.upem,
                 alpha = alpha,
                 blendMode = blendMode,

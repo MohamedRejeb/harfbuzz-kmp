@@ -46,13 +46,11 @@ class VariableFontsTest {
         // nothing - HarfBuzz ignores variations on non-variable fonts. The
         // call must NOT throw.
         val font = robotoFace.toFont(
-            pointSize = 24f,
             variations = listOf(HbVariation.of("wght", 900f)),
         )
         try {
             // Sanity: the font still functions, glyph lookup works.
             assertTrue(font.glyphIdForCodepoint('A'.code) != 0)
-            assertTrue(font.pointSize == 24f)
         } finally {
             font.close()
         }
@@ -103,18 +101,16 @@ class VariableFontsTest {
             // glyph metrics differ - a heavyweight glyph is wider than
             // its lightweight counterpart for most letters.
             val light = face.toFont(
-                pointSize = 32f,
                 variations = listOf(HbVariation(wght.tag, wght.minValue)),
             )
             val heavy = face.toFont(
-                pointSize = 32f,
                 variations = listOf(HbVariation(wght.tag, wght.maxValue)),
             )
             try {
                 val gid = light.glyphIdForCodepoint('M'.code)
                 if (gid == 0) return@use
-                val lightAdv = light.glyphAdvance(gid)
-                val heavyAdv = heavy.glyphAdvance(gid)
+                val lightAdv = light.glyphAdvance(gid, sizePx = 32f)
+                val heavyAdv = heavy.glyphAdvance(gid, sizePx = 32f)
                 // Variable axes should change at least *something* in
                 // glyph metrics - a strict equal across min/max would
                 // mean variations didn't take effect. We don't assert

@@ -1,10 +1,10 @@
 package com.mohamedrejeb.harfbuzz.core
 
 /**
- * Batched per-glyph extents fetch. Returns one entry per id in [glyphIds]
- * (parallel to input order); a `null` entry means HarfBuzz returned false
- * for that glyph (typically `.notdef` or composite-with-no-component
- * edge cases).
+ * Batched per-glyph extents fetch at [sizePx]. Returns one entry per id in
+ * [glyphIds] (parallel to input order); a `null` entry means HarfBuzz
+ * returned false for that glyph (typically `.notdef` or composite-with-no-
+ * component edge cases).
  *
  * Platforms that expose a native-side batch primitive (JVM/Android via
  * JNI) take the fast path through [tryGlyphExtentsBatchNative]: one
@@ -13,12 +13,12 @@ package com.mohamedrejeb.harfbuzz.core
  * inside `runShapingWork { … }` still amortises the per-call
  * dispatcher hop.
  */
-public suspend fun HbFont.glyphExtentsBatch(glyphIds: IntArray): List<GlyphExtents?> {
+public suspend fun HbFont.glyphExtentsBatch(glyphIds: IntArray, sizePx: Float): List<GlyphExtents?> {
     if (glyphIds.isEmpty()) return emptyList()
-    tryGlyphExtentsBatchNative(glyphIds)?.let { return it }
+    tryGlyphExtentsBatchNative(glyphIds, sizePx)?.let { return it }
     val out = ArrayList<GlyphExtents?>(glyphIds.size)
     for (gid in glyphIds) {
-        out.add(glyphExtents(gid))
+        out.add(glyphExtents(gid, sizePx))
     }
     return out
 }
@@ -29,4 +29,7 @@ public suspend fun HbFont.glyphExtentsBatch(glyphIds: IntArray): List<GlyphExten
  * [glyphIds] and matches what the slow-path loop would produce.
  * Implementations return `null` to defer to the loop fallback.
  */
-internal expect suspend fun HbFont.tryGlyphExtentsBatchNative(glyphIds: IntArray): List<GlyphExtents?>?
+internal expect suspend fun HbFont.tryGlyphExtentsBatchNative(
+    glyphIds: IntArray,
+    sizePx: Float,
+): List<GlyphExtents?>?

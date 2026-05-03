@@ -30,10 +30,10 @@ class PathTextEngineTest {
     fun `placements on horizontal line have zero rotation`() = runBlocking {
         harfBuzzInit()
         val face = HbFace.fromBytes(TestFonts.robotoRegular())
-        val font = face.toFont(32f)
+        val font = face.toFont()
         try {
             val stack = HbFontStack(font)
-            val result = stack.shapeOnlyBounds("abc")
+            val result = stack.shapeOnlyBounds("abc", sizePx = 32f)
             val path = horizontalLine(1000f)
 
             val placements = collectPlacements(
@@ -61,10 +61,10 @@ class PathTextEngineTest {
     fun `placements on vertical line are rotated 90 degrees`() = runBlocking {
         harfBuzzInit()
         val face = HbFace.fromBytes(TestFonts.robotoRegular())
-        val font = face.toFont(32f)
+        val font = face.toFont()
         try {
             val stack = HbFontStack(font)
-            val result = stack.shapeOnlyBounds("abc")
+            val result = stack.shapeOnlyBounds("abc", sizePx = 32f)
             val path = verticalLine(1000f)
 
             val placements = collectPlacements(
@@ -94,11 +94,11 @@ class PathTextEngineTest {
     fun `Clip overflow drops glyphs whose center exceeds path length`() = runBlocking {
         harfBuzzInit()
         val face = HbFace.fromBytes(TestFonts.robotoRegular())
-        val font = face.toFont(32f)
+        val font = face.toFont()
         try {
             val stack = HbFontStack(font)
             val text = "this text is much longer than the path is going to be"
-            val result = stack.shapeOnlyBounds(text)
+            val result = stack.shapeOnlyBounds(text, sizePx = 32f)
             val path = horizontalLine(50f) // very short
 
             val placements = collectPlacements(
@@ -126,11 +126,11 @@ class PathTextEngineTest {
     fun `Compress mode places every glyph within path bounds`() = runBlocking {
         harfBuzzInit()
         val face = HbFace.fromBytes(TestFonts.robotoRegular())
-        val font = face.toFont(32f)
+        val font = face.toFont()
         try {
             val stack = HbFontStack(font)
             val text = "wider than path"
-            val result = stack.shapeOnlyBounds(text)
+            val result = stack.shapeOnlyBounds(text, sizePx = 32f)
             val pathLen = 80f
             val path = horizontalLine(pathLen)
 

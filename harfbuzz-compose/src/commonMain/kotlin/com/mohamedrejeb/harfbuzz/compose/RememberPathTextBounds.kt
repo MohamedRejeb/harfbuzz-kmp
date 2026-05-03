@@ -34,6 +34,7 @@ import kotlin.math.sin
 public fun rememberPathTextBounds(
     text: String,
     font: HbFont,
+    sizePx: Float,
     path: Path,
     startOffset: Float = 0f,
     side: TextOnPathSide = TextOnPathSide.Above,
@@ -46,7 +47,7 @@ public fun rememberPathTextBounds(
 ): State<PathTextBoundsLoad> {
     val stack = remember(font) { HbFontStack(font) }
     return rememberPathTextBounds(
-        text, stack, path, startOffset, side, alignment, overflow, autoFlip,
+        text, stack, sizePx, path, startOffset, side, alignment, overflow, autoFlip,
         features, direction, language,
     )
 }
@@ -55,6 +56,7 @@ public fun rememberPathTextBounds(
 public fun rememberPathTextBounds(
     text: String,
     fontStack: HbFontStack,
+    sizePx: Float,
     path: Path,
     startOffset: Float = 0f,
     side: TextOnPathSide = TextOnPathSide.Above,
@@ -66,7 +68,7 @@ public fun rememberPathTextBounds(
     language: HbLanguage = HbLanguage.AUTO,
 ): State<PathTextBoundsLoad> = produceState<PathTextBoundsLoad>(
     initialValue = PathTextBoundsLoad.Loading,
-    text, fontStack, path, startOffset, side, alignment, overflow, autoFlip,
+    text, fontStack, sizePx, path, startOffset, side, alignment, overflow, autoFlip,
     features, direction, language,
 ) {
     value = PathTextBoundsLoad.Loading
@@ -74,6 +76,7 @@ public fun rememberPathTextBounds(
         val computed = runShapingWork {
             val shaped: MeasuredBoundsResult = fontStack.shapeOnlyBounds(
                 text = text,
+                sizePx = sizePx,
                 baseDirection = direction,
                 features = features,
                 language = language,
@@ -81,6 +84,7 @@ public fun rememberPathTextBounds(
             computePathTextBounds(
                 paragraph = shaped.paragraph,
                 primaryFont = fontStack.primary,
+                sizePx = sizePx,
                 path = path,
                 startOffset = startOffset,
                 side = side,
@@ -111,6 +115,7 @@ public fun rememberPathTextBounds(
 internal suspend fun computePathTextBounds(
     paragraph: ShapedParagraph,
     primaryFont: HbFont,
+    sizePx: Float,
     path: Path,
     startOffset: Float,
     side: TextOnPathSide,
@@ -128,7 +133,7 @@ internal suspend fun computePathTextBounds(
     for (run in paragraph.runs) {
         val runFont = run.font ?: primaryFont
         val ids = IntArray(run.glyphCount) { run.glyphs[it].glyphId }
-        extentsByRun[run] = runFont.glyphExtentsBatch(ids)
+        extentsByRun[run] = runFont.glyphExtentsBatch(ids, sizePx)
     }
 
     var left = Float.POSITIVE_INFINITY

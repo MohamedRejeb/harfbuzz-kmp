@@ -79,10 +79,10 @@ class RememberTextBoundsTest {
     fun `shapeOnlyBounds wiring produces non-empty bounds for non-trivial text`() = runBlocking {
         harfBuzzInit()
         val face = HbFace.fromBytes(TestFonts.robotoRegular())
-        val font = face.toFont(24f)
+        val font = face.toFont()
         try {
             val stack = HbFontStack(font)
-            val result = stack.shapeOnlyBounds("Hello, world")
+            val result = stack.shapeOnlyBounds("Hello, world", sizePx = 24f)
             assertTrue(result.bounds.advance > 0f, "expected positive advance, got ${result.bounds.advance}")
             assertEquals(result.paragraph.totalAdvance, result.bounds.advance)
         } finally {

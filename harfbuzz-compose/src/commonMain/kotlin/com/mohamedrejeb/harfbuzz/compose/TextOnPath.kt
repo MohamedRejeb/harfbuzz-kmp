@@ -26,6 +26,7 @@ import com.mohamedrejeb.harfbuzz.core.HbLanguage
 public fun TextOnPath(
     text: String,
     font: HbFont,
+    sizePx: Float,
     path: Path,
     modifier: Modifier = Modifier,
     color: Color = Color.Black,
@@ -38,7 +39,7 @@ public fun TextOnPath(
     direction: HbDirection = HbDirection.AUTO,
     language: HbLanguage = HbLanguage.AUTO,
 ) {
-    val loadState by rememberMeasuredText(text, font, features, direction, language)
+    val loadState by rememberMeasuredText(text, font, sizePx, features, direction, language)
     val measured = (loadState as? MeasuredTextLoad.Ready)?.measured
 
     Box(
@@ -63,6 +64,7 @@ public fun TextOnPath(
 public fun TextOnPath(
     text: String,
     fontStack: HbFontStack,
+    sizePx: Float,
     path: Path,
     modifier: Modifier = Modifier,
     color: Color = Color.Black,
@@ -75,7 +77,7 @@ public fun TextOnPath(
     direction: HbDirection = HbDirection.AUTO,
     language: HbLanguage = HbLanguage.AUTO,
 ) {
-    val loadState by rememberMeasuredText(text, fontStack, features, direction, language)
+    val loadState by rememberMeasuredText(text, fontStack, sizePx, features, direction, language)
     val measured = (loadState as? MeasuredTextLoad.Ready)?.measured
 
     Box(

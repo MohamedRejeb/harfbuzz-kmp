@@ -35,16 +35,16 @@ import kotlin.coroutines.cancellation.CancellationException
  * ```
  */
 @Composable
-public fun rememberHbFont(face: HbFace, sizePx: Float = DEFAULT_FONT_SIZE_PX): State<FontLoad> {
+public fun rememberHbFont(face: HbFace): State<FontLoad> {
     val state: MutableState<FontLoad> =
-        remember(face, sizePx) { mutableStateOf(FontLoad.Loading as FontLoad) }
-    val holder = remember(face, sizePx) { FontHolder() }
+        remember(face) { mutableStateOf(FontLoad.Loading as FontLoad) }
+    val holder = remember(face) { FontHolder() }
 
-    LaunchedEffect(face, sizePx) {
+    LaunchedEffect(face) {
         state.value = FontLoad.Loading
         var built: HbFont? = null
         try {
-            built = face.toFont(sizePx)
+            built = face.toFont()
             holder.font = built
             state.value = FontLoad.Ready(built)
         } catch (ce: CancellationException) {
@@ -53,13 +53,13 @@ public fun rememberHbFont(face: HbFace, sizePx: Float = DEFAULT_FONT_SIZE_PX): S
         } catch (cause: Throwable) {
             built?.close()
             if (isStaleHbHandle(cause)) return@LaunchedEffect
-            println("[kotlin-harfbuzz] rememberHbFont(face) failed sizePx=$sizePx: $cause")
+            println("[kotlin-harfbuzz] rememberHbFont(face) failed: $cause")
             cause.printStackTrace()
             state.value = FontLoad.Failed(cause)
         }
     }
 
-    DisposableEffect(face, sizePx) {
+    DisposableEffect(face) {
         onDispose {
             holder.font?.close()
             holder.font = null
@@ -92,14 +92,13 @@ public fun rememberHbFont(face: HbFace, sizePx: Float = DEFAULT_FONT_SIZE_PX): S
 @Composable
 public fun rememberHbFont(
     bytesProvider: suspend () -> ByteArray,
-    sizePx: Float = DEFAULT_FONT_SIZE_PX,
     key: Any? = bytesProvider,
 ): State<FontLoad> {
     val state: MutableState<FontLoad> =
-        remember(key, sizePx) { mutableStateOf(FontLoad.Loading as FontLoad) }
-    val holder = remember(key, sizePx) { FontHolder() }
+        remember(key) { mutableStateOf(FontLoad.Loading as FontLoad) }
+    val holder = remember(key) { FontHolder() }
 
-    LaunchedEffect(key, sizePx) {
+    LaunchedEffect(key) {
         state.value = FontLoad.Loading
         // Only the font needs cleanup tracking - the face is owned by
         // HbFaceCache and survives errors / cancellation.
@@ -133,7 +132,7 @@ public fun rememberHbFont(
                 // faces are owned by HbFaceCache - DO NOT close them
                 // on dispose (see DisposableEffect below).
                 val newFace = HbFaceCache.get(bytes)
-                val newFont = newFace.toFont(sizePx)
+                val newFont = newFace.toFont()
                 newFace to newFont
             }
             loadedFont = font
@@ -150,18 +149,17 @@ public fun rememberHbFont(
             // Surface to the platform console so failures are inspectable in
             // the browser devtools / logcat / stderr - the on-screen
             // FontLoad.Failed only carries the top-level message.
-            println("[kotlin-harfbuzz] rememberHbFont failed for key=$key sizePx=$sizePx: $cause")
+            println("[kotlin-harfbuzz] rememberHbFont failed for key=$key: $cause")
             cause.printStackTrace()
             state.value = FontLoad.Failed(cause)
         }
     }
 
-    DisposableEffect(key, sizePx) {
+    DisposableEffect(key) {
         onDispose {
-            // The font is per-size and unique to this remember slot -
-            // close it. The face came from HbFaceCache and is shared
-            // across sizes / call sites - do NOT close it here, the
-            // cache owns its lifetime.
+            // The font is unique to this remember slot - close it. The
+            // face came from HbFaceCache and is shared across call
+            // sites - do NOT close it here, the cache owns its lifetime.
             holder.font?.close()
         }
     }

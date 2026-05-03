@@ -30,7 +30,7 @@ class MeasuredTextSnapshotTest {
     fun `snapshot is deterministic across calls`() = runBlocking {
         harfBuzzInit()
         val face = HbFace.fromBytes(TestFonts.robotoRegular())
-        val font = face.toFont(24f)
+        val font = face.toFont()
         val stack = HbFontStack(font)
 
         // Clear the process-wide MeasuredTextCache between builds so this
@@ -41,6 +41,7 @@ class MeasuredTextSnapshotTest {
         val first = buildMeasuredText(
             text = "Hello, world",
             fontStack = stack,
+            sizePx = 24f,
             features = emptyList(),
             direction = HbDirection.AUTO,
             language = HbLanguage.AUTO,
@@ -49,6 +50,7 @@ class MeasuredTextSnapshotTest {
         val second = buildMeasuredText(
             text = "Hello, world",
             fontStack = stack,
+            sizePx = 24f,
             features = emptyList(),
             direction = HbDirection.AUTO,
             language = HbLanguage.AUTO,

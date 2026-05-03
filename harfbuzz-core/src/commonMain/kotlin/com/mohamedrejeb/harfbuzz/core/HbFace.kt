@@ -42,17 +42,36 @@ public expect class HbFace : AutoCloseable {
      */
     public fun hasColorSvg(): Boolean
 
-    /** Construct a font from this face. Default size is 1.0 (unit-em). */
-    public suspend fun toFont(pointSize: Float = 1.0f): HbFont
+    /**
+     * Style metadata inferred from the face's OS/2 + STAT tables - weight
+     * (1..1000), italic (true/false), and width (1.0 = normal). Used by
+     * [HbFontStack] to inherit the primary face's style when resolving
+     * system fallbacks: a bold-italic Latin primary picks up bold-italic
+     * Arabic from the system, no manual config required.
+     *
+     * Returns the registered defaults (`weight=400`, `italic=false`,
+     * `width=1.0`) when the face doesn't expose the corresponding axis.
+     *
+     * Sizeless: derived from face design space, independent of any
+     * render size.
+     */
+    public val styleHint: FontStyleHint
 
     /**
-     * Construct a font from this face with [variations] pinned. Each
-     * [HbVariation] selects a value on its axis; axes not listed take
-     * their default. Variation values out of range are clamped by
-     * HarfBuzz. For non-variable faces this is equivalent to
+     * Construct a sizeless [HbFont] from this face. The returned font
+     * can shape and render at any size - pass the desired pixel size to
+     * each [HbFont] call.
+     */
+    public suspend fun toFont(): HbFont
+
+    /**
+     * Construct a sizeless [HbFont] from this face with [variations]
+     * pinned. Each [HbVariation] selects a value on its axis; axes not
+     * listed take their default. Variation values out of range are
+     * clamped by HarfBuzz. For non-variable faces this is equivalent to
      * [toFont] - the variation list is silently ignored.
      */
-    public suspend fun toFont(pointSize: Float, variations: List<HbVariation>): HbFont
+    public suspend fun toFont(variations: List<HbVariation>): HbFont
 
     /**
      * Variation axes this face exposes (`fvar` table). Empty list when

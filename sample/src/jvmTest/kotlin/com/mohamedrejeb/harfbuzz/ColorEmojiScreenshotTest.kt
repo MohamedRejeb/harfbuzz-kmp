@@ -48,24 +48,25 @@ class ColorEmojiScreenshotTest {
         openFonts.clear()
     }
 
-    private fun loadEmoji(sizePx: Float): HbFont = runBlocking {
+    private fun loadEmoji(sizePx: Float): SizedFont = runBlocking {
         val bytes = readFontBytes(FontPath.EMOJI)
         val face = HbFace.from { bytes(bytes) }
-        val font = face.toFont(sizePx)
+        val font = face.toFont()
         openFonts.add(font)
         openFonts.add(face)
-        font
+        SizedFont(font, sizePx)
     }
 
     /** Smiling face row - radial face gradient + nested feature layers. */
     @Test
     fun `emoji faces render with features`() {
-        val font = loadEmoji(64f)
+        val (font, sizePx) = loadEmoji(64f)
         rule.captureGolden("emoji_faces.png") {
             Stage {
                 ShapedText(
                     text = "😀😍🤔😢🤣",
                     font = font,
+                    sizePx = sizePx,
                     modifier = Modifier.fillMaxWidth().height(96.dp),
                 )
             }
@@ -75,12 +76,13 @@ class ColorEmojiScreenshotTest {
     /** Hearts - simple shape, different palette colors per glyph. */
     @Test
     fun `emoji hearts render with palette colors`() {
-        val font = loadEmoji(64f)
+        val (font, sizePx) = loadEmoji(64f)
         rule.captureGolden("emoji_hearts.png") {
             Stage {
                 ShapedText(
                     text = "❤️💛💚💙💜🖤🤍🤎",
                     font = font,
+                    sizePx = sizePx,
                     modifier = Modifier.fillMaxWidth().height(96.dp),
                 )
             }
@@ -90,12 +92,13 @@ class ColorEmojiScreenshotTest {
     /** Animals - typically deep multi-layer trees with body fur + facial detail. */
     @Test
     fun `emoji animals render with multi layer detail`() {
-        val font = loadEmoji(64f)
+        val (font, sizePx) = loadEmoji(64f)
         rule.captureGolden("emoji_animals.png") {
             Stage {
                 ShapedText(
                     text = "🐱🐶🦁🐼🦊",
                     font = font,
+                    sizePx = sizePx,
                     modifier = Modifier.fillMaxWidth().height(96.dp),
                 )
             }
@@ -105,12 +108,13 @@ class ColorEmojiScreenshotTest {
     /** Food - varied color saturations exercise gradient stop fidelity. */
     @Test
     fun `emoji food renders with varied gradients`() {
-        val font = loadEmoji(64f)
+        val (font, sizePx) = loadEmoji(64f)
         rule.captureGolden("emoji_food.png") {
             Stage {
                 ShapedText(
                     text = "🍕🍔🍎🍌🍇🍓",
                     font = font,
+                    sizePx = sizePx,
                     modifier = Modifier.fillMaxWidth().height(96.dp),
                 )
             }
@@ -125,12 +129,13 @@ class ColorEmojiScreenshotTest {
      */
     @Test
     fun `emoji nature renders with radial gradients and multi region`() {
-        val font = loadEmoji(64f)
+        val (font, sizePx) = loadEmoji(64f)
         rule.captureGolden("emoji_nature.png") {
             Stage {
                 ShapedText(
                     text = "☀️🌙⭐🔥❄️☁️",
                     font = font,
+                    sizePx = sizePx,
                     modifier = Modifier.fillMaxWidth().height(96.dp),
                 )
             }
@@ -144,12 +149,13 @@ class ColorEmojiScreenshotTest {
      */
     @Test
     fun `emoji objects render with high op density`() {
-        val font = loadEmoji(64f)
+        val (font, sizePx) = loadEmoji(64f)
         rule.captureGolden("emoji_objects.png") {
             Stage {
                 ShapedText(
                     text = "🎉🎊🎁💎🏆⚽",
                     font = font,
+                    sizePx = sizePx,
                     modifier = Modifier.fillMaxWidth().height(96.dp),
                 )
             }
@@ -163,12 +169,13 @@ class ColorEmojiScreenshotTest {
      */
     @Test
     fun `emoji hands render`() {
-        val font = loadEmoji(64f)
+        val (font, sizePx) = loadEmoji(64f)
         rule.captureGolden("emoji_hands.png") {
             Stage {
                 ShapedText(
                     text = "👋👍👎✋🤝",
                     font = font,
+                    sizePx = sizePx,
                     modifier = Modifier.fillMaxWidth().height(96.dp),
                 )
             }
@@ -181,12 +188,13 @@ class ColorEmojiScreenshotTest {
      */
     @Test
     fun `emoji mixed large size`() {
-        val font = loadEmoji(96f)
+        val (font, sizePx) = loadEmoji(96f)
         rule.captureGolden("emoji_mixed_large.png") {
             Stage {
                 ShapedText(
                     text = "🎨🚀🌍",
                     font = font,
+                    sizePx = sizePx,
                     modifier = Modifier.fillMaxWidth().height(140.dp),
                 )
             }

@@ -60,23 +60,24 @@ class ShapedParagraphBrushScreenshotTest {
         openFonts.clear()
     }
 
-    private fun loadFont(path: String, sizePx: Float): HbFont = runBlocking {
+    private fun loadFont(path: String, sizePx: Float): SizedFont = runBlocking {
         val bytes = readFontBytes(path)
         val face = HbFace.from { bytes(bytes) }
-        val font = face.toFont(sizePx)
+        val font = face.toFont()
         openFonts.add(font)
         openFonts.add(face)
-        font
+        SizedFont(font, sizePx)
     }
 
     @Test
     fun `latin paragraph brush horizontal gradient fill`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("paragraph_brush_latin_horizontal_gradient.png") {
             Stage {
                 ShapedParagraphText(
                     text = "The quick brown fox jumps over the lazy dog and runs away today.",
                     font = font,
+                    sizePx = sizePx,
                     brush = Brush.horizontalGradient(
                         listOf(
                             Color(0xFFE91E63),
@@ -95,12 +96,13 @@ class ShapedParagraphBrushScreenshotTest {
 
     @Test
     fun `arabic paragraph brush horizontal gradient fill`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 28f)
         rule.captureGolden("paragraph_brush_arabic_horizontal_gradient.png") {
             Stage {
                 ShapedParagraphText(
                     text = "هذا نص عربي تجريبي للاختبار. نص متدرج الألوان بالعربية للقراءة.",
                     font = font,
+                    sizePx = sizePx,
                     brush = Brush.horizontalGradient(
                         listOf(
                             Color(0xFFFF5722),
@@ -119,12 +121,13 @@ class ShapedParagraphBrushScreenshotTest {
 
     @Test
     fun `latin paragraph brush vertical gradient stroke`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 32f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 32f)
         rule.captureGolden("paragraph_brush_latin_stroke_gradient.png") {
             Stage {
                 ShapedParagraphText(
                     text = "Stroked text spans multiple lines with a vertical gradient.",
                     font = font,
+                    sizePx = sizePx,
                     brush = Brush.verticalGradient(
                         listOf(
                             Color(0xFF1976D2),
@@ -143,12 +146,13 @@ class ShapedParagraphBrushScreenshotTest {
 
     @Test
     fun `latin paragraph brush with shadow`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("paragraph_brush_latin_with_shadow.png") {
             Stage {
                 ShapedParagraphText(
                     text = "Gradient text with a soft drop shadow under each line.",
                     font = font,
+                    sizePx = sizePx,
                     brush = Brush.horizontalGradient(
                         listOf(Color(0xFFE91E63), Color(0xFF2196F3)),
                     ),
@@ -172,12 +176,13 @@ class ShapedParagraphBrushScreenshotTest {
         // shared stroke path - both brush and color routes pull
         // silhouettes from the same per-glyph cache, so this guards
         // against regressions in the non-brush stroke path.
-        val font = loadFont(FontPath.LATIN_REGULAR, 32f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 32f)
         rule.captureGolden("paragraph_stroke_latin_solid.png") {
             Stage {
                 ShapedParagraphText(
                     text = "Stroked solid color across multiple lines of text.",
                     font = font,
+                    sizePx = sizePx,
                     color = Color(0xFF111827),
                     style = Stroke(width = 1.5f),
                     modifier = Modifier
@@ -195,12 +200,13 @@ class ShapedParagraphBrushScreenshotTest {
         // must follow the stroke path (i.e. shadow itself is stroked, not
         // filled), matching the single-line `stroke with shadow combined`
         // test.
-        val font = loadFont(FontPath.LATIN_REGULAR, 32f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 32f)
         rule.captureGolden("paragraph_stroke_latin_with_shadow.png") {
             Stage {
                 ShapedParagraphText(
                     text = "Stroked paragraph with shadow on every wrapped line.",
                     font = font,
+                    sizePx = sizePx,
                     color = Color(0xFF1F2937),
                     style = Stroke(width = 1.5f),
                     shadow = Shadow(
@@ -226,12 +232,13 @@ class ShapedParagraphBrushScreenshotTest {
      */
     @Test
     fun `aref ruqaa ink paragraph brush preserves designed colors`() {
-        val font = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 32f)
+        val (font, sizePx) = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 32f)
         rule.captureGolden("paragraph_brush_aref_ruqaa_ink_unchanged.png") {
             Stage {
                 ShapedParagraphText(
                     text = "نص عربي تجريبي للاختبار. اختبار عرض النصوص بالعربية.",
                     font = font,
+                    sizePx = sizePx,
                     brush = Brush.horizontalGradient(
                         listOf(Color(0xFF00BCD4), Color(0xFFE91E63)),
                     ),
@@ -253,12 +260,13 @@ class ShapedParagraphBrushScreenshotTest {
      */
     @Test
     fun `aref ruqaa ink paragraph brush force foreground tints silhouettes`() {
-        val font = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 32f)
+        val (font, sizePx) = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 32f)
         rule.captureGolden("paragraph_brush_aref_ruqaa_ink_force_foreground.png") {
             Stage {
                 ShapedParagraphText(
                     text = "نص عربي تجريبي للاختبار. اختبار عرض النصوص بالعربية.",
                     font = font,
+                    sizePx = sizePx,
                     brush = Brush.horizontalGradient(
                         listOf(Color(0xFF00BCD4), Color(0xFFE91E63)),
                     ),
@@ -280,12 +288,13 @@ class ShapedParagraphBrushScreenshotTest {
      */
     @Test
     fun `noto color emoji paragraph brush preserves designed colors`() {
-        val font = loadFont(FontPath.EMOJI, 40f)
+        val (font, sizePx) = loadFont(FontPath.EMOJI, 40f)
         rule.captureGolden("paragraph_brush_emoji_unchanged.png") {
             Stage {
                 ShapedParagraphText(
                     text = "😀🌍🎉⭐ 🚀✨🎨🎵 🌟🌙☀️🌊",
                     font = font,
+                    sizePx = sizePx,
                     brush = Brush.horizontalGradient(
                         listOf(Color.Cyan, Color.Magenta),
                     ),

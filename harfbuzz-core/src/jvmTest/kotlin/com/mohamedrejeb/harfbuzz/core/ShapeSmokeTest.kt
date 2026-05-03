@@ -36,14 +36,14 @@ class ShapeSmokeTest {
         }
         val face = HbFace.from { bytes(bytes) }
         face.use { f ->
-            val font = f.toFont(pointSize = 16f)
+            val font = f.toFont()
             font.use { hb ->
                 HbBuffer().use { buf ->
                     buf.text = "Hello World"
                     buf.direction = HbDirection.LTR
                     buf.script = HbScript.LATIN
                     buf.language = HbLanguage.ENGLISH
-                    val run = hb.shape(buf)
+                    val run = hb.shape(buf, sizePx = 16f)
                     assertEquals(11, run.glyphs.size, "11 chars should typically map to ~11 glyphs in Latin")
                     assertTrue(run.totalAdvance > 0f, "totalAdvance should be positive, got ${run.totalAdvance}")
                     assertTrue(run.glyphs.all { it.glyphId > 0 }, "all glyphs should resolve (no .notdef for ASCII)")
@@ -57,12 +57,12 @@ class ShapeSmokeTest {
         val bytes = loadSystemFont() ?: return@runBlocking
         val face = HbFace.from { bytes(bytes) }
         face.use { f ->
-            f.toFont(16f).use { hb ->
+            f.toFont().use { hb ->
                 val gid = hb.glyphIdForCodepoint('H'.code)
                 if (gid == 0) return@use  // font lacks glyph
-                val advance = hb.glyphAdvance(gid)
+                val advance = hb.glyphAdvance(gid, sizePx = 16f)
                 assertTrue(advance > 0f, "advance should be positive, got $advance")
-                val ext = hb.glyphExtents(gid)
+                val ext = hb.glyphExtents(gid, sizePx = 16f)
                 if (ext != null) {
                     assertTrue(ext.width > 0f && ext.height != 0f, "extents should have non-zero area: $ext")
                 }

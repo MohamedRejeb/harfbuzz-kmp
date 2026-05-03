@@ -44,7 +44,7 @@ class MeasuredTextCacheBenchmark {
         runBlocking {
             harfBuzzInit()
             face = HbFace.fromBytes(TestFonts.robotoRegular())
-            font = face.toFont(POINT_SIZE)
+            font = face.toFont()
             // Optional NotoColorEmoji fixture loaded from the sample dir
             // (the compose test resources only ship Roboto). Skip the
             // emoji benches when the font isn't reachable, but still run
@@ -52,7 +52,7 @@ class MeasuredTextCacheBenchmark {
             val emojiFile = File("../sample/src/commonMain/composeResources/font/NotoColorEmoji-Regular.ttf")
             if (emojiFile.exists()) {
                 emojiFace = HbFace.fromBytes(emojiFile.readBytes())
-                emojiFont = emojiFace?.toFont(POINT_SIZE)
+                emojiFont = emojiFace?.toFont()
                 emojiFont?.let { emojiStack = HbFontStack(it, system = SystemFallback.None) }
             }
         }
@@ -95,6 +95,7 @@ class MeasuredTextCacheBenchmark {
             buildMeasuredText(
                 text = EMOJI_PARAGRAPH,
                 fontStack = target,
+                sizePx = POINT_SIZE,
                 features = emptyList(),
                 direction = HbDirection.AUTO,
                 language = HbLanguage.AUTO,
@@ -111,6 +112,7 @@ class MeasuredTextCacheBenchmark {
             buildMeasuredText(
                 text = LATIN_PARAGRAPH,
                 fontStack = stack,
+                sizePx = POINT_SIZE,
                 features = emptyList(),
                 direction = HbDirection.AUTO,
                 language = HbLanguage.AUTO,
@@ -128,6 +130,7 @@ class MeasuredTextCacheBenchmark {
             buildMeasuredText(
                 text = "$LATIN_PARAGRAPH ${counter++}",
                 fontStack = stack,
+                sizePx = POINT_SIZE,
                 features = emptyList(),
                 direction = HbDirection.AUTO,
                 language = HbLanguage.AUTO,
@@ -149,6 +152,7 @@ class MeasuredTextCacheBenchmark {
                 buildMeasuredText(
                     text = LATIN_PARAGRAPH,
                     fontStack = freshStack,
+                    sizePx = POINT_SIZE,
                     features = emptyList(),
                     direction = HbDirection.AUTO,
                     language = HbLanguage.AUTO,

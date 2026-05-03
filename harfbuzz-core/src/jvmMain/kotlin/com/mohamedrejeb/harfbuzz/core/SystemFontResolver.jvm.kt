@@ -47,12 +47,12 @@ internal class JvmSystemFontResolver(
         val languageHints: Set<String>,
     ) {
         /**
-         * Per-pointSize fonts minted on demand. We cache rather than mutate
-         * a single shared font's pointSize because callers from earlier
-         * resolves may still hold the returned reference - mutating
-         * underneath them would silently change their shaped metrics.
+         * Single sizeless [HbFont] minted on first cover-walk and reused for
+         * every subsequent resolve against this face. HbFont is now sizeless
+         * so the same instance shapes at any caller-supplied sizePx; no
+         * per-size cache needed.
          */
-        val fontsBySize: HashMap<Float, HbFont> = HashMap()
+        var sizelessFont: HbFont? = null
     }
 
     /** Curated paths we have not yet attempted to load. */
@@ -80,16 +80,12 @@ internal class JvmSystemFontResolver(
     private fun key(codepoint: Int, italic: Boolean): Long =
         (codepoint.toLong() and 0xFFFFFFFFL) or (if (italic) 1L shl 32 else 0L)
 
-    override suspend fun fontFor(codepoint: Int, pointSize: Float): HbFont? {
+    override suspend fun fontFor(codepoint: Int): HbFont? {
         val italic = style.italic
         val cacheKey = key(codepoint, italic)
         if (resolved.containsKey(cacheKey)) {
-            // Cache hit - same Loaded as before; mint or reuse the
-            // pointSize-specific font. Two fontFor calls at the same size
-            // return the same HbFont instance (per the resolver contract);
-            // a new size mints a fresh font without disturbing the old one.
             val cached = resolved[cacheKey] ?: return null
-            return sizedFont(cached, pointSize)
+            return sizelessFont(cached)
         }
 
         // Color-emoji bias: when the codepoint is in a known emoji range
@@ -107,10 +103,10 @@ internal class JvmSystemFontResolver(
 
         val orderedLoaded = loaded.sortedWith(if (preferColor) rankPreferColor else rankPlain)
         for (l in orderedLoaded) {
-            val sized = sizedFont(l, pointSize)
-            if (sized.glyphIdForCodepoint(codepoint) != 0) {
+            val font = sizelessFont(l)
+            if (font.glyphIdForCodepoint(codepoint) != 0) {
                 resolved[cacheKey] = l
-                return sized
+                return font
             }
         }
 
@@ -121,27 +117,27 @@ internal class JvmSystemFontResolver(
         while (pending.isNotEmpty()) {
             val path = pickNextPendingPath(scriptHints) ?: break
             val l = tryLoad(path) ?: continue
-            val sized = sizedFont(l, pointSize)
+            val font = sizelessFont(l)
             // If we already have a color-capable cover for this codepoint
             // and the freshly-loaded font is monochrome, prefer the color
             // one. Otherwise accept the first cover.
-            if (sized.glyphIdForCodepoint(codepoint) != 0) {
+            if (font.glyphIdForCodepoint(codepoint) != 0) {
                 if (!preferColor || l.hasColor) {
                     resolved[cacheKey] = l
-                    return sized
+                    return font
                 }
                 // Monochrome cover but color preferred - keep loading
                 // until we find a color one or exhaust the chain. We
                 // remember the first cover so we can fall back to it.
-                var firstCoverLoaded: Loaded = l
-                var firstCoverFont: HbFont = sized
+                val firstCoverLoaded: Loaded = l
+                val firstCoverFont: HbFont = font
                 while (pending.isNotEmpty()) {
                     val next = pickNextPendingPath(scriptHints) ?: break
                     val nl = tryLoad(next) ?: continue
-                    val ns = sizedFont(nl, pointSize)
-                    if (ns.glyphIdForCodepoint(codepoint) != 0 && nl.hasColor) {
+                    val nf = sizelessFont(nl)
+                    if (nf.glyphIdForCodepoint(codepoint) != 0 && nl.hasColor) {
                         resolved[cacheKey] = nl
-                        return ns
+                        return nf
                     }
                 }
                 resolved[cacheKey] = firstCoverLoaded
@@ -218,18 +214,14 @@ internal class JvmSystemFontResolver(
     }
 
     /**
-     * Get-or-mint the [HbFont] for [pointSize] from this loaded face. The
-     * cache holds every distinct size ever requested for [l] until
-     * [close] runs - apps tend to use 1–3 sizes per resolver, so this
-     * stays small. The point of caching (vs. mutating one shared font)
-     * is that previously-returned references stay valid: a paragraph
-     * shaped at 14f keeps its 14f metrics even after a later resolve
-     * asks for 24f.
+     * Get-or-mint the sizeless [HbFont] for [l]. With sizeless fonts a
+     * single instance is reused for every resolve against this face;
+     * callers pass sizePx per shape / glyph call.
      */
-    private suspend fun sizedFont(l: Loaded, pointSize: Float): HbFont {
-        l.fontsBySize[pointSize]?.let { return it }
-        val font = l.face.toFont(pointSize)
-        l.fontsBySize[pointSize] = font
+    private suspend fun sizelessFont(l: Loaded): HbFont {
+        l.sizelessFont?.let { return it }
+        val font = l.face.toFont()
+        l.sizelessFont = font
         return font
     }
 
@@ -260,8 +252,8 @@ internal class JvmSystemFontResolver(
 
     override fun close() {
         for (l in loaded) {
-            for (font in l.fontsBySize.values) runCatching { font.close() }
-            l.fontsBySize.clear()
+            l.sizelessFont?.let { runCatching { it.close() } }
+            l.sizelessFont = null
             runCatching { l.face.close() }
         }
         loaded.clear()

@@ -13,4 +13,5 @@ package com.mohamedrejeb.harfbuzz.core
  */
 internal actual suspend fun HbFont.tryGlyphExtentsBatchNative(
     glyphIds: IntArray,
+    sizePx: Float,
 ): List<GlyphExtents?>? = null

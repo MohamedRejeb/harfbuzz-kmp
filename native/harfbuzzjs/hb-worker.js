@@ -204,6 +204,12 @@ function collectAxes(m, facePtr) {
     return axes;
 }
 
+// HbFont is size-independent on the main side: scale is set per RPC call by
+// the size-dependent handlers (shape*, glyph*, snapshotGlyphs, buildMeasured).
+// At create time we mint the font at the main side's design scale (sizePx==1
+// → 64 funits/em) and return its hExtents at that scale; the main side
+// stores those as `designExtents` and scales them by `sizePx / 1` whenever
+// it answers an `hExtents(sizePx)` query without a worker round-trip.
 async function rpcCreateFont({ faceId, sizePx, variations }) {
     const h = await ensureHb();
     const face = faces.get(faceId);
@@ -223,6 +229,14 @@ async function rpcCreateFont({ faceId, sizePx, variations }) {
         descender: ext.descender / 64,
         lineGap: ext.lineGap / 64,
     };
+}
+
+// Set hb_font scale to `sizePx` units/em ahead of a size-dependent op.
+// The worker is single-threaded so the scale persists exactly for the
+// span of the calling RPC handler, with no risk of being clobbered mid-call.
+function setFontScale(fontJs, sizePx) {
+    const s = (sizePx * 64) | 0;
+    fontJs.setScale(s, s);
 }
 
 function rpcDestroyFont({ fontId }) {
@@ -253,7 +267,7 @@ function applyVariations(m, fontPtr, variations) {
 // run with harfbuzzjs. This is a line-by-line port of WasmShaping.shapeParagraph
 // and HbFont.shape from harfbuzz-core/src/wasmJsMain/.../HbStubs.wasmJs.kt.
 
-async function rpcShapeParagraph({ fontStack, text, baseDirection, features, language, bidiRuns }) {
+async function rpcShapeParagraph({ fontStack, sizePx, text, baseDirection, features, language, bidiRuns }) {
     const h = await ensureHb();
     if (text.length === 0) {
         return {
@@ -264,10 +278,11 @@ async function rpcShapeParagraph({ fontStack, text, baseDirection, features, lan
         };
     }
     // Single-font BiDi for v1: take fontStack[0]. Multi-font fallback
-    // shaping (HbFontStack) lands in a follow-up PR — keeping parity
+    // shaping (HbFontStack) lands in a follow-up PR - keeping parity
     // with what HbStubs.wasmJs.kt does today.
     const fontEntry = fonts.get(fontStack[0]);
     if (!fontEntry) throw new Error(`unknown fontId ${fontStack[0]}`);
+    setFontScale(fontEntry.js, sizePx);
 
     const buf = h.createBuffer();
     try {
@@ -411,10 +426,11 @@ function packFeatures(features) {
 
 // ───── Single-run shape (mirror of HbFont.shape on main) ──────────────────
 
-async function rpcShapeRun({ fontId, text, direction, scriptTag, language, features }) {
+async function rpcShapeRun({ fontId, sizePx, text, direction, scriptTag, language, features }) {
     const h = await ensureHb();
     const fontEntry = fonts.get(fontId);
     if (!fontEntry) throw new Error(`unknown fontId ${fontId}`);
+    setFontScale(fontEntry.js, sizePx);
     const buf = h.createBuffer();
     try {
         if (text && text.length > 0) buf.addText(text);
@@ -471,17 +487,19 @@ async function rpcGlyphIdForCodepoint({ fontId, codepoint }) {
     }
 }
 
-async function rpcGlyphAdvance({ fontId, gid }) {
+async function rpcGlyphAdvance({ fontId, gid, sizePx }) {
     const h = await ensureHb();
     const fontEntry = fonts.get(fontId);
     if (!fontEntry) throw new Error(`unknown fontId ${fontId}`);
+    setFontScale(fontEntry.js, sizePx);
     return { advance: fontEntry.js.glyphHAdvance(gid | 0) / 64 };
 }
 
-async function rpcGlyphExtents({ fontId, gid }) {
+async function rpcGlyphExtents({ fontId, gid, sizePx }) {
     const h = await ensureHb();
     const fontEntry = fonts.get(fontId);
     if (!fontEntry) throw new Error(`unknown fontId ${fontId}`);
+    setFontScale(fontEntry.js, sizePx);
     const ext = fontEntry.js.glyphExtents(gid | 0);
     if (!ext) return { ok: 0 };
     return {
@@ -493,18 +511,20 @@ async function rpcGlyphExtents({ fontId, gid }) {
     };
 }
 
-async function rpcGlyphPath({ fontId, gid }) {
+async function rpcGlyphPath({ fontId, gid, sizePx }) {
     const h = await ensureHb();
     const fontEntry = fonts.get(fontId);
     if (!fontEntry) throw new Error(`unknown fontId ${fontId}`);
+    setFontScale(fontEntry.js, sizePx);
     const svg = String(fontEntry.js.glyphToPath(gid | 0));
     return { svg };
 }
 
-async function rpcGlyphPaint({ fontId, gid, foreground, paletteIndex }) {
+async function rpcGlyphPaint({ fontId, gid, sizePx, foreground, paletteIndex }) {
     const h = await ensureHb();
     const fontEntry = fonts.get(fontId);
     if (!fontEntry) throw new Error(`unknown fontId ${fontId}`);
+    setFontScale(fontEntry.js, sizePx);
     const buf = paintGlyph(h, fontEntry.js.ptr, gid | 0, foreground | 0, paletteIndex | 0);
     return { bytes: buf };
 }
@@ -531,13 +551,14 @@ async function rpcGlyphSvg({ fontId, gid }) {
 // PaintBufferParser, ColorLayer decoder, and SVG handling on the Kotlin
 // side consume the output unchanged.
 
-async function rpcSnapshotGlyphs({ fontId, gids, flags }) {
+async function rpcSnapshotGlyphs({ fontId, sizePx, gids, flags }) {
     const h = await ensureHb();
     const fontEntry = fonts.get(fontId);
     if (!fontEntry) throw new Error(`unknown fontId ${fontId}`);
     const font = fontEntry.js;
     const facePtr = fontEntry.facePtr;
     const m = h.__module;
+    setFontScale(font, sizePx);
 
     const results = {
         flippedPaths: {},
@@ -1031,7 +1052,7 @@ function paintGlyph(h, fontPtr, glyph, foreground, paletteIndex) {
 // the `feature/background-harfbuzz` long-task report.
 
 async function rpcBuildMeasured(payload) {
-    const { fontStack, text, baseDirection, language, features, bidiRuns, perFontFlags } = payload;
+    const { fontStack, sizePx, text, baseDirection, language, features, bidiRuns, perFontFlags } = payload;
     const h = await ensureHb();
 
     if (!fontStack || fontStack.length === 0 || !text || text.length === 0 ||
@@ -1049,11 +1070,15 @@ async function rpcBuildMeasured(payload) {
     }
 
     // Resolve every font handle up front so the inner shape loop never
-    // crosses a Map lookup.
+    // crosses a Map lookup. Each entry's hb_font_t scale is set once here
+    // for the whole RPC: shape, glyph extents, paths, and paint trees all
+    // run inside this single handler with no opportunity for another RPC
+    // to clobber the scale (single-threaded worker).
     const entries = new Array(fontStack.length);
     for (let i = 0; i < fontStack.length; i++) {
         const e = fonts.get(fontStack[i]);
         if (!e) throw new Error(`unknown fontId ${fontStack[i]}`);
+        setFontScale(e.js, sizePx);
         entries[i] = e;
     }
 

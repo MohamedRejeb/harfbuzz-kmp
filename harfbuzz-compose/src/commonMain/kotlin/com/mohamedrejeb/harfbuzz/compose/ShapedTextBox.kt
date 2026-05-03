@@ -80,6 +80,7 @@ public fun ShapedTextBox(
         val paragraphLoad by rememberMeasuredParagraph(
             text = text,
             fontStack = style.fontStack,
+            sizePx = style.fontSize,
             maxWidth = maxWidthPx,
             alignment = style.alignment,
             direction = style.direction,

@@ -49,9 +49,9 @@ class ShapingBenchmarks {
         )
         require(robotoFile.exists()) { "Missing $robotoFile - run from repo root." }
         runBlocking {
-            roboto = HbFace.fromBytes(robotoFile.readBytes()).toFont(POINT_SIZE)
-            arabic = HbFace.fromBytes(arabicFile.readBytes()).toFont(POINT_SIZE)
-            emoji = HbFace.fromBytes(emojiFile.readBytes()).toFont(POINT_SIZE)
+            roboto = HbFace.fromBytes(robotoFile.readBytes()).toFont()
+            arabic = HbFace.fromBytes(arabicFile.readBytes()).toFont()
+            emoji = HbFace.fromBytes(emojiFile.readBytes()).toFont()
         }
         stack = HbFontStack(roboto, fallbacks = listOf(arabic, emoji))
         // No fallbacks → exercises the boring fast path when text is also
@@ -111,28 +111,28 @@ class ShapingBenchmarks {
         // (skips BiDi resolver + cluster walk) instead of the direct
         // `font.shapeParagraph` call that already inlines BiDi.
         bench("shape-Latin-stack-boring (80c, fallbacks=[], boring text)") {
-            boringStack.shapeParagraph(LATIN_PARAGRAPH)
+            boringStack.shapeParagraph(LATIN_PARAGRAPH, sizePx = POINT_SIZE)
         }
     }
 
     @Test
     fun `bench shape Latin paragraph`() = runBlocking {
         bench("shape-Latin (80c, warm)") {
-            roboto.shapeParagraph(LATIN_PARAGRAPH)
+            roboto.shapeParagraph(LATIN_PARAGRAPH, sizePx = POINT_SIZE)
         }
     }
 
     @Test
     fun `bench shape Arabic paragraph`() = runBlocking {
         bench("shape-Arabic (38c, warm)") {
-            arabic.shapeParagraph(ARABIC_PARAGRAPH)
+            arabic.shapeParagraph(ARABIC_PARAGRAPH, sizePx = POINT_SIZE)
         }
     }
 
     @Test
     fun `bench shape mixed Latin Arabic emoji via stack`() = runBlocking {
         bench("shape-mixed (Latin+Arabic+emoji via stack)") {
-            stack.shapeParagraph(MIXED_PARAGRAPH)
+            stack.shapeParagraph(MIXED_PARAGRAPH, sizePx = POINT_SIZE)
         }
     }
 
@@ -142,10 +142,10 @@ class ShapingBenchmarks {
         // instead of triggering fallback recursion. Logs the produced run
         // count alongside timings so a regression in fragmentation is
         // visible without re-running with a debugger.
-        val runCount = stack.shapeParagraph(EMOJI_FRAGMENT_PARAGRAPH).runs.size
+        val runCount = stack.shapeParagraph(EMOJI_FRAGMENT_PARAGRAPH, sizePx = POINT_SIZE).runs.size
         println("shape-fragment runCount=$runCount  (text=\"$EMOJI_FRAGMENT_PARAGRAPH\")")
         bench("shape-fragment (Hello 🙂 world 🙃 byes via stack)") {
-            stack.shapeParagraph(EMOJI_FRAGMENT_PARAGRAPH)
+            stack.shapeParagraph(EMOJI_FRAGMENT_PARAGRAPH, sizePx = POINT_SIZE)
         }
     }
 
@@ -157,7 +157,7 @@ class ShapingBenchmarks {
         // variant drop.
         bench("shape-many-sequential (50 short)") {
             for (text in SMALL_PARAGRAPHS) {
-                roboto.shapeParagraph(text)
+                roboto.shapeParagraph(text, sizePx = POINT_SIZE)
             }
         }
     }
@@ -167,7 +167,7 @@ class ShapingBenchmarks {
         bench("shape-many-async (50 short, await all)") {
             coroutineScope {
                 SMALL_PARAGRAPHS.map { text ->
-                    async { roboto.shapeParagraph(text) }
+                    async { roboto.shapeParagraph(text, sizePx = POINT_SIZE) }
                 }.awaitAll()
             }
         }
@@ -177,15 +177,15 @@ class ShapingBenchmarks {
     fun `bench glyph extents batch vs loop`() = runBlocking {
         // Pre-build a representative gid array by shaping a long string
         // and harvesting its glyph IDs.
-        val shaped = roboto.shapeParagraph(GIDS_SOURCE)
+        val shaped = roboto.shapeParagraph(GIDS_SOURCE, sizePx = POINT_SIZE)
         val gids = shaped.runs.flatMap { it.glyphs }.map { it.glyphId }.toIntArray()
         require(gids.size >= 100) { "expected ≥100 glyphs from source string, got ${gids.size}" }
 
         bench("glyphExtentsBatch (${gids.size} gids)") {
-            roboto.glyphExtentsBatch(gids)
+            roboto.glyphExtentsBatch(gids, sizePx = POINT_SIZE)
         }
         bench("glyphExtents loop (${gids.size} gids)") {
-            for (gid in gids) roboto.glyphExtents(gid)
+            for (gid in gids) roboto.glyphExtents(gid, sizePx = POINT_SIZE)
         }
     }
 
@@ -200,7 +200,7 @@ class ShapingBenchmarks {
                 candidatePaths = listOf(arabicFile),
             )
             try {
-                resolver.fontFor(codepoint = 0x0644, pointSize = POINT_SIZE)
+                resolver.fontFor(codepoint = 0x0644)
             } finally {
                 resolver.close()
             }
@@ -212,9 +212,9 @@ class ShapingBenchmarks {
             candidatePaths = listOf(arabicFile),
         )
         try {
-            warmResolver.fontFor(codepoint = 0x0644, pointSize = POINT_SIZE)
+            warmResolver.fontFor(codepoint = 0x0644)
             bench("resolver-warm (cached Arabic codepoint)") {
-                warmResolver.fontFor(codepoint = 0x0644, pointSize = POINT_SIZE)
+                warmResolver.fontFor(codepoint = 0x0644)
             }
         } finally {
             warmResolver.close()

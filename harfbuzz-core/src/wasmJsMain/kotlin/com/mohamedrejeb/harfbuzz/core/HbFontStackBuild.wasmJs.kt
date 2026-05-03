@@ -13,6 +13,7 @@ package com.mohamedrejeb.harfbuzz.core
  */
 internal actual suspend fun HbFontStack.tryBuildMeasuredFastPath(
     text: String,
+    sizePx: Float,
     baseDirection: HbDirection,
     features: List<HbFeature>,
     language: HbLanguage,
@@ -47,6 +48,7 @@ internal actual suspend fun HbFontStack.tryBuildMeasuredFastPath(
 
     val payload = buildBuildMeasuredPayload(
         fontIds = IntArray(fonts.size) { fonts[it].fontId.toInt() },
+        sizePx = sizePx,
         text = text,
         baseDirection = bufferDirectionToString(baseDirection),
         language = if (language == HbLanguage.AUTO) "auto" else language.bcp47,

@@ -73,23 +73,24 @@ class ShapedTextScreenshotTest {
         openFonts.clear()
     }
 
-    private fun loadFont(path: String, sizePx: Float): HbFont = runBlocking {
+    private fun loadFont(path: String, sizePx: Float): SizedFont = runBlocking {
         val bytes = readFontBytes(path)
         val face = HbFace.from { bytes(bytes) }
-        val font = face.toFont(sizePx)
+        val font = face.toFont()
         openFonts.add(font)
         openFonts.add(face)
-        font
+        SizedFont(font, sizePx)
     }
 
     @Test
     fun `latin roboto regular 24px`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("shaped_latin_roboto_regular.png") {
             Stage {
                 ShapedText(
                     text = "Hello, kotlin-harfbuzz! 1234",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     modifier = Modifier.fillMaxWidth().height(32.dp),
                 )
@@ -99,12 +100,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin roboto bold 28px`() {
-        val font = loadFont("font/Roboto-Bold.ttf", 28f)
+        val (font, sizePx) = loadFont("font/Roboto-Bold.ttf", 28f)
         rule.captureGolden("shaped_latin_roboto_bold.png") {
             Stage {
                 ShapedText(
                     text = "The quick brown fox jumps over",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     modifier = Modifier.fillMaxWidth().height(36.dp),
                 )
@@ -114,12 +116,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin roboto italic 24px`() {
-        val font = loadFont("font/Roboto-Italic.ttf", 24f)
+        val (font, sizePx) = loadFont("font/Roboto-Italic.ttf", 24f)
         rule.captureGolden("shaped_latin_roboto_italic.png") {
             Stage {
                 ShapedText(
                     text = "Italic typography 0123456789",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     modifier = Modifier.fillMaxWidth().height(32.dp),
                 )
@@ -129,12 +132,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `arabic naskh regular tashkeel sample`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 32f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 32f)
         rule.captureGolden("shaped_arabic_tashkeel_sample.png") {
             Stage {
                 ShapedText(
                     text = "نَصٌّ عَرَبِيٌّ مُشَكَّلٌ لِلْاِخْتِبَارِ",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                 )
@@ -144,12 +148,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `arabic naskh regular plain words`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 32f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 32f)
         rule.captureGolden("shaped_arabic_plain_words.png") {
             Stage {
                 ShapedText(
                     text = "أهلا كلمات عربية للتجربة",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                 )
@@ -159,12 +164,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `arabic naskh bold tashkeel greeting`() {
-        val font = loadFont(FontPath.ARABIC_BOLD, 32f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_BOLD, 32f)
         rule.captureGolden("shaped_arabic_bold_tashkeel_greeting.png") {
             Stage {
                 ShapedText(
                     text = "كَلِمَاتٌ عَرَبِيَّةٌ مُشَكَّلَةٌ لِلْاِخْتِبَارِ",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                 )
@@ -174,12 +180,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `mixed latin arabic bidi line`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 28f)
         rule.captureGolden("shaped_mixed_bidi.png") {
             Stage {
                 ShapedText(
                     text = "Hello مرحبا 123 لاختبار النصوص العربية",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     modifier = Modifier.fillMaxWidth().height(40.dp),
                 )
@@ -189,12 +196,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `arabic lam alef ligation`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 48f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 48f)
         rule.captureGolden("shaped_arabic_lam_alef.png") {
             Stage {
                 ShapedText(
                     text = "لا كلام بلا فائدة",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     modifier = Modifier.fillMaxWidth().height(64.dp),
                 )
@@ -204,12 +212,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin liga feature on`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 48f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 48f)
         rule.captureGolden("shaped_latin_liga_on.png") {
             Stage {
                 ShapedText(
                     text = "office afflict film final",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     features = listOf(HbFeature("liga", value = 1u)),
                     modifier = Modifier.fillMaxWidth().height(64.dp),
@@ -220,12 +229,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin liga feature off`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 48f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 48f)
         rule.captureGolden("shaped_latin_liga_off.png") {
             Stage {
                 ShapedText(
                     text = "office afflict film final",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     features = listOf(HbFeature("liga", value = 0u)),
                     modifier = Modifier.fillMaxWidth().height(64.dp),
@@ -236,12 +246,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin bounds overlay`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 32f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 32f)
         rule.captureGolden("shaped_bounds_overlay_latin.png") {
             Stage {
                 ShapedTextWithBounds(
                     text = "Hello, kotlin-harfbuzz! gjpqy",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                 )
             }
@@ -250,12 +261,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `arabic bounds overlay tashkeel`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 32f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 32f)
         rule.captureGolden("shaped_bounds_overlay_arabic.png") {
             Stage {
                 ShapedTextWithBounds(
                     text = "نَصٌّ عَرَبِيٌّ مُشَكَّلٌ لِلْاِخْتِبَارِ",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                 )
             }
@@ -264,12 +276,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `aref ruqaa regular`() {
-        val font = loadFont(FontPath.AREF_RUQAA_REGULAR, 36f)
+        val (font, sizePx) = loadFont(FontPath.AREF_RUQAA_REGULAR, 36f)
         rule.captureGolden("shaped_aref_ruqaa_regular.png") {
             Stage {
                 ShapedText(
                     text = "نص عربي تجريبي للاختبار",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                 )
@@ -279,12 +292,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `aref ruqaa bold`() {
-        val font = loadFont(FontPath.AREF_RUQAA_BOLD, 36f)
+        val (font, sizePx) = loadFont(FontPath.AREF_RUQAA_BOLD, 36f)
         rule.captureGolden("shaped_aref_ruqaa_bold.png") {
             Stage {
                 ShapedText(
                     text = "نص عربي",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     modifier = Modifier.fillMaxWidth().height(56.dp),
                 )
@@ -301,12 +315,13 @@ class ShapedTextScreenshotTest {
      */
     @Test
     fun `aref ruqaa ink colr v1 paints gradient inks`() {
-        val font = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 40f)
+        val (font, sizePx) = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 40f)
         rule.captureGolden("shaped_aref_ruqaa_ink_v1_paint.png") {
             Stage {
                 ShapedText(
                     text = "نص عربي تجريبي للاختبار",
                     font = font,
+                    sizePx = sizePx,
                     color = Color(0xFFB00020),
                     modifier = Modifier.fillMaxWidth().height(64.dp),
                 )
@@ -322,12 +337,13 @@ class ShapedTextScreenshotTest {
      */
     @Test
     fun `aref ruqaa ink colr v1 force foreground respects caller color`() {
-        val font = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 40f)
+        val (font, sizePx) = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 40f)
         rule.captureGolden("shaped_aref_ruqaa_ink_v1_force_foreground.png") {
             Stage {
                 ShapedText(
                     text = "نص عربي تجريبي للاختبار",
                     font = font,
+                    sizePx = sizePx,
                     color = Color(0xFFB00020),
                     forceForegroundColor = true,
                     modifier = Modifier.fillMaxWidth().height(64.dp),
@@ -344,12 +360,13 @@ class ShapedTextScreenshotTest {
      */
     @Test
     fun `aref ruqaa ink colr v1 large size shows full gradient`() {
-        val font = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 80f)
+        val (font, sizePx) = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 80f)
         rule.captureGolden("shaped_aref_ruqaa_ink_v1_paint_80pt.png") {
             Stage {
                 ShapedText(
                     text = "نص عربي تجريبي للاختبار",
                     font = font,
+                    sizePx = sizePx,
                     color = Color(0xFFB00020),
                     modifier = Modifier.fillMaxWidth().height(120.dp),
                 )
@@ -366,12 +383,13 @@ class ShapedTextScreenshotTest {
      */
     @Test
     fun `noto color emoji renders multilayer paint trees`() {
-        val font = loadFont(FontPath.EMOJI, 64f)
+        val (font, sizePx) = loadFont(FontPath.EMOJI, 64f)
         rule.captureGolden("shaped_noto_color_emoji.png") {
             Stage {
                 ShapedText(
                     text = "😀🌍🎉⭐",
                     font = font,
+                    sizePx = sizePx,
                     modifier = Modifier.fillMaxWidth().height(96.dp),
                 )
             }
@@ -380,12 +398,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `aref ruqaa bounds overlay`() {
-        val font = loadFont(FontPath.AREF_RUQAA_REGULAR, 36f)
+        val (font, sizePx) = loadFont(FontPath.AREF_RUQAA_REGULAR, 36f)
         rule.captureGolden("shaped_bounds_overlay_aref_ruqaa.png") {
             Stage {
                 ShapedTextWithBounds(
                     text = "نص عربي تجريبي للاختبار",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                 )
             }
@@ -394,12 +413,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin custom color crimson`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 28f)
         rule.captureGolden("shaped_latin_color_crimson.png") {
             Stage {
                 ShapedText(
                     text = "Color test 1234",
                     font = font,
+                    sizePx = sizePx,
                     color = Color(0xFFB00020),
                     modifier = Modifier.fillMaxWidth().height(36.dp),
                 )
@@ -409,12 +429,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `arabic custom color teal`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 32f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 32f)
         rule.captureGolden("shaped_arabic_color_teal.png") {
             Stage {
                 ShapedText(
                     text = "نص عربي",
                     font = font,
+                    sizePx = sizePx,
                     color = Color(0xFF00897B),
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                 )
@@ -428,12 +449,13 @@ class ShapedTextScreenshotTest {
         // sukun + fatha) sandwiched between Latin letters and Latin digits.
         // Exercises both the multi-run ink rect accumulation and the
         // y_offset sign for marks above the cap.
-        val font = loadFont(FontPath.ARABIC_REGULAR, 32f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 32f)
         rule.captureGolden("shaped_bounds_overlay_mixed_bidi_tashkeel.png") {
             Stage {
                 ShapedTextWithBounds(
                     text = "Hello أَنْتَ 1234",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                 )
             }
@@ -442,12 +464,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `mixed bidi bounds overlay`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 28f)
         rule.captureGolden("shaped_bounds_overlay_mixed_bidi.png") {
             Stage {
                 ShapedTextWithBounds(
                     text = "Hello مرحبا 123 لاختبار النصوص العربية",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                 )
             }
@@ -456,12 +479,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `arabic plain words bounds overlay`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 32f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 32f)
         rule.captureGolden("shaped_bounds_overlay_arabic_plain.png") {
             Stage {
                 ShapedTextWithBounds(
                     text = "أهلا كلمات عربية للتجربة",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                 )
             }
@@ -470,12 +494,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `arabic explicit rtl direction`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 32f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 32f)
         rule.captureGolden("shaped_arabic_explicit_rtl.png") {
             Stage {
                 ShapedText(
                     text = "نص عربي تجريبي للاختبار",
                     font = font,
+                    sizePx = sizePx,
                     color = Color.Black,
                     direction = HbDirection.RTL,
                     modifier = Modifier.fillMaxWidth().height(48.dp),
@@ -493,12 +518,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin align start in slot`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("shaped_align_latin_start.png") {
             Stage {
                 ShapedTextInSlot(
                     text = "Hello world",
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 400.dp,
                     alignment = ParagraphAlignment.Start,
                 )
@@ -508,12 +534,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin align end in slot`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("shaped_align_latin_end.png") {
             Stage {
                 ShapedTextInSlot(
                     text = "Hello world",
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 400.dp,
                     alignment = ParagraphAlignment.End,
                 )
@@ -523,12 +550,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin align left in slot`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("shaped_align_latin_left.png") {
             Stage {
                 ShapedTextInSlot(
                     text = "Hello world",
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 400.dp,
                     alignment = ParagraphAlignment.Left,
                 )
@@ -538,12 +566,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin align right in slot`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("shaped_align_latin_right.png") {
             Stage {
                 ShapedTextInSlot(
                     text = "Hello world",
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 400.dp,
                     alignment = ParagraphAlignment.Right,
                 )
@@ -553,12 +582,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin align center in slot`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("shaped_align_latin_center.png") {
             Stage {
                 ShapedTextInSlot(
                     text = "Hello world",
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 400.dp,
                     alignment = ParagraphAlignment.Center,
                 )
@@ -568,12 +598,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `arabic align end in slot`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 28f)
         rule.captureGolden("shaped_align_arabic_end.png") {
             Stage {
                 ShapedTextInSlot(
                     text = "مرحبا بالعالم",
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 400.dp,
                     alignment = ParagraphAlignment.End,
                 )
@@ -583,12 +614,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `arabic align left in slot`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 28f)
         rule.captureGolden("shaped_align_arabic_left.png") {
             Stage {
                 ShapedTextInSlot(
                     text = "مرحبا بالعالم",
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 400.dp,
                     alignment = ParagraphAlignment.Left,
                 )
@@ -598,12 +630,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `arabic align right in slot`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 28f)
         rule.captureGolden("shaped_align_arabic_right.png") {
             Stage {
                 ShapedTextInSlot(
                     text = "مرحبا بالعالم",
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 400.dp,
                     alignment = ParagraphAlignment.Right,
                 )
@@ -613,12 +646,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `arabic align center in slot`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 28f)
         rule.captureGolden("shaped_align_arabic_center.png") {
             Stage {
                 ShapedTextInSlot(
                     text = "مرحبا بالعالم",
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 400.dp,
                     alignment = ParagraphAlignment.Center,
                 )
@@ -634,12 +668,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin justify wordspacing in slot`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("shaped_justify_latin_wordspacing.png") {
             Stage {
                 ShapedTextInSlot(
                     text = "Hello world from kotlin",
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 480.dp,
                     alignment = ParagraphAlignment.Justify,
                     justification = JustificationStrategy.WordSpacing,
@@ -650,12 +685,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `arabic justify kashida in slot`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 28f)
         rule.captureGolden("shaped_justify_arabic_kashida.png") {
             Stage {
                 ShapedTextInSlot(
                     text = "مرحبا بك في تجربة النص",
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 480.dp,
                     alignment = ParagraphAlignment.Justify,
                     justification = JustificationStrategy.Mixed,
@@ -679,12 +715,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin overflow clip start`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("shaped_overflow_latin_clip_start.png") {
             Stage {
                 ShapedTextInSlot(
                     text = LATIN_LOREM,
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 200.dp,
                     alignment = ParagraphAlignment.Start,
                     overflow = ShapedTextOverflow.Clip,
@@ -695,12 +732,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin overflow clip end`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("shaped_overflow_latin_clip_end.png") {
             Stage {
                 ShapedTextInSlot(
                     text = LATIN_LOREM,
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 200.dp,
                     alignment = ParagraphAlignment.End,
                     overflow = ShapedTextOverflow.Clip,
@@ -711,12 +749,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin overflow clip center`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("shaped_overflow_latin_clip_center.png") {
             Stage {
                 ShapedTextInSlot(
                     text = LATIN_LOREM,
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 200.dp,
                     alignment = ParagraphAlignment.Center,
                     overflow = ShapedTextOverflow.Clip,
@@ -727,12 +766,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin overflow visible start`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("shaped_overflow_latin_visible_start.png") {
             Stage {
                 ShapedTextInSlot(
                     text = LATIN_LOREM,
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 200.dp,
                     alignment = ParagraphAlignment.Start,
                     overflow = ShapedTextOverflow.Visible,
@@ -743,12 +783,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin overflow compress start`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("shaped_overflow_latin_compress_start.png") {
             Stage {
                 ShapedTextInSlot(
                     text = LATIN_LOREM,
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 280.dp,
                     alignment = ParagraphAlignment.Start,
                     overflow = ShapedTextOverflow.Compress,
@@ -759,12 +800,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `arabic overflow clip start`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 28f)
         rule.captureGolden("shaped_overflow_arabic_clip_start.png") {
             Stage {
                 ShapedTextInSlot(
                     text = ARABIC_DUMMY,
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 240.dp,
                     alignment = ParagraphAlignment.Start,
                     overflow = ShapedTextOverflow.Clip,
@@ -775,12 +817,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `arabic overflow clip end`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 28f)
         rule.captureGolden("shaped_overflow_arabic_clip_end.png") {
             Stage {
                 ShapedTextInSlot(
                     text = ARABIC_DUMMY,
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 240.dp,
                     alignment = ParagraphAlignment.End,
                     overflow = ShapedTextOverflow.Clip,
@@ -791,12 +834,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `arabic overflow visible end`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 28f)
         rule.captureGolden("shaped_overflow_arabic_visible_end.png") {
             Stage {
                 ShapedTextInSlot(
                     text = ARABIC_DUMMY,
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 240.dp,
                     alignment = ParagraphAlignment.End,
                     overflow = ShapedTextOverflow.Visible,
@@ -807,12 +851,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `arabic overflow compress start`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 28f)
         rule.captureGolden("shaped_overflow_arabic_compress_start.png") {
             Stage {
                 ShapedTextInSlot(
                     text = ARABIC_DUMMY,
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 320.dp,
                     alignment = ParagraphAlignment.Start,
                     overflow = ShapedTextOverflow.Compress,
@@ -833,12 +878,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin brush horizontal gradient fill`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 32f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 32f)
         rule.captureGolden("shaped_brush_latin_horizontal_gradient.png") {
             Stage {
                 ShapedText(
                     text = "Hello, gradient world!",
                     font = font,
+                    sizePx = sizePx,
                     brush = Brush.horizontalGradient(
                         listOf(
                             Color(0xFFE91E63),
@@ -854,12 +900,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `arabic brush horizontal gradient fill`() {
-        val font = loadFont(FontPath.ARABIC_REGULAR, 36f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_REGULAR, 36f)
         rule.captureGolden("shaped_brush_arabic_horizontal_gradient.png") {
             Stage {
                 ShapedText(
                     text = "نص متدرج الألوان",
                     font = font,
+                    sizePx = sizePx,
                     brush = Brush.horizontalGradient(
                         listOf(
                             Color(0xFFFF5722),
@@ -874,12 +921,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin brush vertical gradient stroke`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 56f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 56f)
         rule.captureGolden("shaped_brush_latin_stroke_gradient.png") {
             Stage {
                 ShapedText(
                     text = "Stroke",
                     font = font,
+                    sizePx = sizePx,
                     brush = Brush.verticalGradient(
                         listOf(
                             Color(0xFF1976D2),
@@ -895,12 +943,13 @@ class ShapedTextScreenshotTest {
 
     @Test
     fun `latin brush with shadow`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 32f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 32f)
         rule.captureGolden("shaped_brush_latin_with_shadow.png") {
             Stage {
                 ShapedText(
                     text = "Gradient with shadow",
                     font = font,
+                    sizePx = sizePx,
                     brush = Brush.horizontalGradient(
                         listOf(Color(0xFFE91E63), Color(0xFF2196F3)),
                     ),
@@ -923,12 +972,13 @@ class ShapedTextScreenshotTest {
      */
     @Test
     fun `latin brush in slot with compress`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("shaped_brush_latin_compress.png") {
             Stage {
                 ShapedTextInSlot(
                     text = LATIN_LOREM,
                     font = font,
+                    sizePx = sizePx,
                     slotWidth = 280.dp,
                     brush = Brush.horizontalGradient(
                         listOf(Color(0xFFE91E63), Color(0xFF2196F3)),
@@ -947,12 +997,13 @@ class ShapedTextScreenshotTest {
      */
     @Test
     fun `aref ruqaa ink brush preserves designed colors`() {
-        val font = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 40f)
+        val (font, sizePx) = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 40f)
         rule.captureGolden("shaped_brush_aref_ruqaa_ink_unchanged.png") {
             Stage {
                 ShapedText(
                     text = "نص عربي تجريبي للاختبار",
                     font = font,
+                    sizePx = sizePx,
                     brush = Brush.horizontalGradient(
                         listOf(Color(0xFF00BCD4), Color(0xFFE91E63)),
                     ),
@@ -970,12 +1021,13 @@ class ShapedTextScreenshotTest {
      */
     @Test
     fun `noto color emoji brush preserves designed colors`() {
-        val font = loadFont(FontPath.EMOJI, 64f)
+        val (font, sizePx) = loadFont(FontPath.EMOJI, 64f)
         rule.captureGolden("shaped_brush_emoji_unchanged.png") {
             Stage {
                 ShapedText(
                     text = "😀🌍🎉⭐",
                     font = font,
+                    sizePx = sizePx,
                     brush = Brush.horizontalGradient(
                         listOf(Color.Cyan, Color.Magenta),
                     ),
@@ -994,12 +1046,13 @@ class ShapedTextScreenshotTest {
      */
     @Test
     fun `aref ruqaa ink brush force foreground tints silhouettes`() {
-        val font = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 40f)
+        val (font, sizePx) = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 40f)
         rule.captureGolden("shaped_brush_aref_ruqaa_ink_force_foreground.png") {
             Stage {
                 ShapedText(
                     text = "نص عربي تجريبي للاختبار",
                     font = font,
+                    sizePx = sizePx,
                     brush = Brush.horizontalGradient(
                         listOf(Color(0xFF00BCD4), Color(0xFFE91E63)),
                     ),
@@ -1024,6 +1077,7 @@ class ShapedTextScreenshotTest {
     private fun ShapedTextInSlot(
         text: String,
         font: HbFont,
+        sizePx: Float,
         slotWidth: Dp,
         slotHeight: Dp = 48.dp,
         alignment: ParagraphAlignment = ParagraphAlignment.Start,
@@ -1045,6 +1099,7 @@ class ShapedTextScreenshotTest {
             ShapedText(
                 text = text,
                 font = font,
+                sizePx = sizePx,
                 color = color,
                 brush = brush,
                 direction = direction,
@@ -1086,13 +1141,14 @@ class ShapedTextScreenshotTest {
 private fun ShapedTextWithBounds(
     text: String,
     font: HbFont,
+    sizePx: Float,
     color: Color,
     direction: HbDirection = HbDirection.AUTO,
     inkColor: Color = Color(0xFFE91E63),
     logicalColor: Color = Color(0xFF00BCD4),
     baselineColor: Color = Color(0xFFFFB300),
 ) {
-    val loadState by rememberMeasuredText(text, font, direction = direction)
+    val loadState by rememberMeasuredText(text, font, sizePx = sizePx, direction = direction)
     val measured: MeasuredText? = (loadState as? MeasuredTextLoad.Ready)?.measured
 
     // Auto-size the layout so both the logical line box (top at y=0, bottom

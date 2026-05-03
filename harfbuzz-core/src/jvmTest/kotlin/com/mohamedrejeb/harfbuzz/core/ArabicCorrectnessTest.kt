@@ -25,13 +25,13 @@ class ArabicCorrectnessTest {
     fun `arabic sample shapes as RTL run with positive advance`() = runBlocking {
         val bytes = loadArabicFont() ?: return@runBlocking
         HbFace.from { bytes(bytes) }.use { face ->
-            face.toFont(32f).use { font ->
+            face.toFont().use { font ->
                 HbBuffer().use { buf ->
                     buf.text = "نص عربي تجريبي للاختبار"
                     buf.direction = HbDirection.RTL
                     buf.script = HbScript.ARABIC
                     buf.language = HbLanguage.ARABIC
-                    val run = font.shape(buf)
+                    val run = font.shape(buf, sizePx = 32f)
 
                     assertTrue(run.glyphs.isNotEmpty(), "Arabic sample should produce glyphs")
                     assertTrue(run.totalAdvance > 0f, "Arabic sample totalAdvance should be > 0")
@@ -50,12 +50,12 @@ class ArabicCorrectnessTest {
     fun `lam-alef collapses into a single glyph`() = runBlocking {
         val bytes = loadArabicFont() ?: return@runBlocking
         HbFace.from { bytes(bytes) }.use { face ->
-            face.toFont(32f).use { font ->
+            face.toFont().use { font ->
                 HbBuffer().use { buf ->
                     buf.text = "لا"   // Lam (0x0644) + Alef (0x0627)
                     buf.direction = HbDirection.RTL
                     buf.script = HbScript.ARABIC
-                    val run = font.shape(buf)
+                    val run = font.shape(buf, sizePx = 32f)
 
                     assertEquals(
                         1, run.glyphs.size,
@@ -70,14 +70,14 @@ class ArabicCorrectnessTest {
     fun `tashkeel marks attach as positioned glyphs not their own runs`() = runBlocking {
         val bytes = loadArabicFont() ?: return@runBlocking
         HbFace.from { bytes(bytes) }.use { face ->
-            face.toFont(32f).use { font ->
+            face.toFont().use { font ->
                 HbBuffer().use { buf ->
                     // Lam (0x0644) + Fatha (0x064E) + Mim (0x0645) + Sukun (0x0652)
                     val text = "لَمْ"
                     buf.text = text
                     buf.direction = HbDirection.RTL
                     buf.script = HbScript.ARABIC
-                    val run = font.shape(buf)
+                    val run = font.shape(buf, sizePx = 32f)
 
                     // 4 codepoints - expect 4 glyphs (2 base + 2 mark) at minimum.
                     assertTrue(run.glyphs.size >= 2, "expected at least 2 glyphs for `لَمْ`, got ${run.glyphs.size}")
@@ -93,10 +93,11 @@ class ArabicCorrectnessTest {
     fun `mixed Latin Arabic produces multi-run paragraph in correct order`() = runBlocking {
         val bytes = loadArabicFont() ?: return@runBlocking
         HbFace.from { bytes(bytes) }.use { face ->
-            face.toFont(24f).use { font ->
+            face.toFont().use { font ->
                 val paragraph = font.shapeParagraph(
                     text = "Hello مرحبا 123",
-                    baseDirection = HbDirection.LTR,
+                    sizePx = 32f,
+            baseDirection = HbDirection.LTR,
                 )
 
                 assertTrue(paragraph.runs.size >= 2, "expected at least 2 runs, got ${paragraph.runs.size}")
@@ -111,10 +112,11 @@ class ArabicCorrectnessTest {
     fun `arabic-indic digits keep AN class - render right-to-left in Arabic context`() = runBlocking {
         val bytes = loadArabicFont() ?: return@runBlocking
         HbFace.from { bytes(bytes) }.use { face ->
-            face.toFont(24f).use { font ->
+            face.toFont().use { font ->
                 val paragraph = font.shapeParagraph(
                     text = "السنة ١٢٣",   // Arabic-Indic digits
-                    baseDirection = HbDirection.RTL,
+                    sizePx = 32f,
+            baseDirection = HbDirection.RTL,
                 )
                 assertTrue(paragraph.runs.isNotEmpty())
                 assertTrue(paragraph.totalAdvance > 0f)
@@ -134,16 +136,18 @@ class ArabicCorrectnessTest {
     fun `RTL paragraph direction resolved from first strong char when AUTO`() = runBlocking {
         val bytes = loadArabicFont() ?: return@runBlocking
         HbFace.from { bytes(bytes) }.use { face ->
-            face.toFont(24f).use { font ->
+            face.toFont().use { font ->
                 val arabicFirst = font.shapeParagraph(
                     text = "نص Hello",
-                    baseDirection = HbDirection.AUTO,
+                    sizePx = 32f,
+            baseDirection = HbDirection.AUTO,
                 )
                 assertEquals(HbDirection.RTL, arabicFirst.baseDirection)
 
                 val latinFirst = font.shapeParagraph(
                     text = "Hello نص",
-                    baseDirection = HbDirection.AUTO,
+                    sizePx = 32f,
+            baseDirection = HbDirection.AUTO,
                 )
                 assertEquals(HbDirection.LTR, latinFirst.baseDirection)
             }
@@ -161,18 +165,19 @@ class ArabicCorrectnessTest {
     fun `shapeParagraph engages Arabic shaper without explicit script`() = runBlocking {
         val bytes = loadArabicFont() ?: return@runBlocking
         HbFace.from { bytes(bytes) }.use { face ->
-            face.toFont(32f).use { font ->
+            face.toFont().use { font ->
                 val text = "نص عربي تجريبي للاختبار"
 
                 val viaParagraph = font.shapeParagraph(
                     text = text,
-                    baseDirection = HbDirection.RTL,
+                    sizePx = 32f,
+            baseDirection = HbDirection.RTL,
                 )
                 val viaBuffer = HbBuffer().use { buf ->
                     buf.text = text
                     buf.direction = HbDirection.RTL
                     buf.script = HbScript.ARABIC
-                    font.shape(buf)
+                    font.shape(buf, sizePx = 32f)
                 }
 
                 val paragraphGids = viaParagraph.runs.flatMap { it.glyphs.map { g -> g.glyphId } }
@@ -196,10 +201,11 @@ class ArabicCorrectnessTest {
     fun `shapeParagraph ligates lam-alef`() = runBlocking {
         val bytes = loadArabicFont() ?: return@runBlocking
         HbFace.from { bytes(bytes) }.use { face ->
-            face.toFont(32f).use { font ->
+            face.toFont().use { font ->
                 val paragraph = font.shapeParagraph(
                     text = "لا",
-                    baseDirection = HbDirection.RTL,
+                    sizePx = 32f,
+            baseDirection = HbDirection.RTL,
                 )
                 val totalGlyphs = paragraph.runs.sumOf { it.glyphCount }
                 assertEquals(
@@ -215,21 +221,21 @@ class ArabicCorrectnessTest {
     fun `OpenType feature toggle changes shaping output`() = runBlocking {
         val bytes = loadArabicFont() ?: return@runBlocking
         HbFace.from { bytes(bytes) }.use { face ->
-            face.toFont(24f).use { font ->
+            face.toFont().use { font ->
                 val text = "fi"  // typical Latin ligature; works on any font with `liga`
                 val withLiga = HbBuffer().use { buf ->
                     buf.text = text
                     buf.direction = HbDirection.LTR
                     buf.script = HbScript.LATIN
                     buf.features = listOf(HbFeature("liga", value = 1u))
-                    font.shape(buf)
+                    font.shape(buf, sizePx = 32f)
                 }
                 val withoutLiga = HbBuffer().use { buf ->
                     buf.text = text
                     buf.direction = HbDirection.LTR
                     buf.script = HbScript.LATIN
                     buf.features = listOf(HbFeature("liga", value = 0u))
-                    font.shape(buf)
+                    font.shape(buf, sizePx = 32f)
                 }
                 // The feature toggle should affect at least one of: glyph count,
                 // glyph IDs, or total advance.

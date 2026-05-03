@@ -33,6 +33,7 @@ import com.mohamedrejeb.harfbuzz.core.HbFontStack
 public fun ArcText(
     text: String,
     font: HbFont,
+    sizePx: Float,
     radius: Dp,
     modifier: Modifier = Modifier,
     startAngle: Float = 0f,
@@ -44,7 +45,7 @@ public fun ArcText(
     style: DrawStyle = Fill,
     shadow: Shadow? = null,
 ) {
-    val loadState by rememberMeasuredText(text, font, features)
+    val loadState by rememberMeasuredText(text, font, sizePx, features)
     val measured = (loadState as? MeasuredTextLoad.Ready)?.measured
 
     Box(
@@ -81,6 +82,7 @@ public fun ArcText(
 public fun ArcText(
     text: String,
     fontStack: HbFontStack,
+    sizePx: Float,
     radius: Dp,
     modifier: Modifier = Modifier,
     startAngle: Float = 0f,
@@ -92,7 +94,7 @@ public fun ArcText(
     style: DrawStyle = Fill,
     shadow: Shadow? = null,
 ) {
-    val loadState by rememberMeasuredText(text, fontStack, features)
+    val loadState by rememberMeasuredText(text, fontStack, sizePx, features)
     val measured = (loadState as? MeasuredTextLoad.Ready)?.measured
 
     Box(

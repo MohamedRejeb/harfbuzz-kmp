@@ -19,6 +19,14 @@ package com.mohamedrejeb.harfbuzz.core
 
 private const val HBJS_FIXED_SCALE: Float = 64f
 
+/**
+ * Design-space pseudo-size used when minting a wasm hb_font_t. The worker
+ * applies setScale per shape/glyph call once the caller's sizePx is in
+ * the RPC payload, so the construction-time scale only needs to be
+ * non-zero. Mirrors `DESIGN_SCALE_POINT_SIZE` on JVM/iOS.
+ */
+private const val DESIGN_SCALE_POINT_SIZE: Float = 1f
+
 // ───── HbBlob ───────────────────────────────────────────────────────────────
 
 /**
@@ -74,20 +82,36 @@ public actual class HbFace internal constructor(
         return cachedAxes
     }
 
-    public actual suspend fun toFont(pointSize: Float): HbFont = toFont(pointSize, emptyList())
+    public actual suspend fun toFont(): HbFont = toFont(emptyList())
 
-    public actual suspend fun toFont(pointSize: Float, variations: List<HbVariation>): HbFont {
+    public actual suspend fun toFont(variations: List<HbVariation>): HbFont {
         check(!closed) { "hb object disposed" }
-        val payload = buildCreateFontPayload(faceId.toInt(), pointSize, variations)
+        // Mint the worker-side hb_font_t at the design scale; size-dependent
+        // RPCs carry their own sizePx so the worker can re-scale per call.
+        // Cached design-space ascender/descender/lineGap come back in the
+        // reply so [hExtents] can return them after multiplying by sizePx.
+        val payload = buildCreateFontPayload(faceId.toInt(), DESIGN_SCALE_POINT_SIZE, variations)
         val reply = HbWorker.send("createFont", payload)
             ?: error("createFont returned null")
         val fontId = jsGetIntField(reply, "fontId").toLong()
         val ascender = jsGetFloatField(reply, "ascender")
         val descender = jsGetFloatField(reply, "descender")
         val lineGap = jsGetFloatField(reply, "lineGap")
-        val hExtents = FontExtents(ascender = ascender, descender = descender, lineGap = lineGap)
-        return HbFont(this, fontId, pointSize, hExtents)
+        val designExtents = FontExtents(
+            ascender = ascender,
+            descender = descender,
+            lineGap = lineGap,
+        )
+        return HbFont(this, fontId, designExtents)
     }
+
+    /**
+     * Wasm exposes `hb_style_get_value` only via the worker, so the main-
+     * side actual returns the registered defaults today. Callers needing
+     * exact style on Wasm should pass an explicit [SystemFallback.Match]
+     * with a manual [FontStyleHint].
+     */
+    public actual val styleHint: FontStyleHint = FontStyleHint()
 
     actual override fun close() {
         if (closed) return
@@ -168,37 +192,30 @@ public actual class HbFaceSource internal constructor() {
 public actual class HbFont internal constructor(
     public actual val face: HbFace,
     internal val fontId: Long,
-    pointSizeInit: Float,
-    public actual val hExtents: FontExtents?,
+    private val designExtents: FontExtents,
 ) : AutoCloseable {
     private var closed: Boolean = false
     public actual val isClosed: Boolean get() = closed
 
-    /**
-     * Mutating `pointSize` after construction would require a new RPC and
-     * we'd still need to re-key any per-font caches downstream. For now,
-     * callers should obtain a fresh font via `face.toFont(newSize)` when
-     * they want a different size; this matches the JVM/iOS handle
-     * lifecycle semantics anyway.
-     */
-    public actual var pointSize: Float = pointSizeInit
-        set(value) {
-            check(!closed) { "hb object disposed" }
-            if (value == field) return
-            error(
-                "Setting pointSize on Wasm requires a worker round-trip - " +
-                    "use face.toFont(newSize) to build a fresh font instead.",
-            )
-        }
-
     /** harfbuzzjs's `font.glyphToPath` emits 26.6 fixed-point - divide by 64. */
     public actual val pathScale: Float = 1f / HBJS_FIXED_SCALE
 
-    // Wasm worker doesn't expose hb_style_get_value yet; return registered
-    // defaults so [HbFontStack]'s primary-style inheritance falls through to
-    // weight=400 / regular / 1.0. Callers needing exact style on Wasm should
-    // pass an explicit [SystemFallback.Match] with a manual [FontStyleHint].
-    public actual val styleHint: FontStyleHint = FontStyleHint()
+    /**
+     * Scale the design-space metrics captured at [HbFace.toFont] time by
+     * `sizePx / DESIGN_SCALE_POINT_SIZE` (== `sizePx / 1f`). The worker
+     * already converts hb's 26.6 fixed-point to pixels at the design
+     * size, so the final scaling is a single multiply on the main side
+     * with no extra round-trip.
+     */
+    public actual suspend fun hExtents(sizePx: Float): FontExtents? {
+        check(!closed) { "hb object disposed" }
+        val k = sizePx / DESIGN_SCALE_POINT_SIZE
+        return FontExtents(
+            ascender = designExtents.ascender * k,
+            descender = designExtents.descender * k,
+            lineGap = designExtents.lineGap * k,
+        )
+    }
 
     public actual suspend fun glyphIdForCodepoint(codepoint: Int): Int {
         check(!closed) { "hb object disposed" }
@@ -208,17 +225,17 @@ public actual class HbFont internal constructor(
         return jsGetIntField(reply, "glyphId")
     }
 
-    public actual suspend fun glyphAdvance(glyphId: Int): Float {
+    public actual suspend fun glyphAdvance(glyphId: Int, sizePx: Float): Float {
         check(!closed) { "hb object disposed" }
-        val payload = buildGlyphIdPayload(fontId.toInt(), glyphId)
+        val payload = buildGlyphIdPayload(fontId.toInt(), glyphId, sizePx)
         val reply = HbWorker.send("getGlyphAdvance", payload)
             ?: return 0f
         return jsGetFloatField(reply, "advance")
     }
 
-    public actual suspend fun glyphExtents(glyphId: Int): GlyphExtents? {
+    public actual suspend fun glyphExtents(glyphId: Int, sizePx: Float): GlyphExtents? {
         check(!closed) { "hb object disposed" }
-        val payload = buildGlyphIdPayload(fontId.toInt(), glyphId)
+        val payload = buildGlyphIdPayload(fontId.toInt(), glyphId, sizePx)
         val reply = HbWorker.send("getGlyphExtents", payload) ?: return null
         if (jsGetIntField(reply, "ok") == 0) return null
         return GlyphExtents(
@@ -229,11 +246,12 @@ public actual class HbFont internal constructor(
         )
     }
 
-    public actual suspend fun shape(buffer: HbBuffer): ShapedRun {
+    public actual suspend fun shape(buffer: HbBuffer, sizePx: Float): ShapedRun {
         check(!closed) { "hb object disposed" }
         check(!buffer.isClosed) { "hb object disposed" }
         val payload = buildShapeRunPayload(
             fontId = fontId.toInt(),
+            sizePx = sizePx,
             text = buffer.text,
             direction = bufferDirectionToString(buffer.direction),
             scriptTag = buffer.script.tag.raw.toInt(),
@@ -247,6 +265,7 @@ public actual class HbFont internal constructor(
 
     public actual suspend fun shapeParagraph(
         text: String,
+        sizePx: Float,
         baseDirection: HbDirection,
         features: List<HbFeature>,
         language: HbLanguage,
@@ -266,6 +285,7 @@ public actual class HbFont internal constructor(
 
         val payload = buildShapeParagraphPayload(
             fontId = fontId.toInt(),
+            sizePx = sizePx,
             text = text,
             baseDirection = bufferDirectionToString(baseDirection),
             language = languageToTag(language),
@@ -284,9 +304,9 @@ public actual class HbFont internal constructor(
         }
     }
 
-    public actual suspend fun drawGlyph(glyphId: Int, sink: HbPathSink) {
+    public actual suspend fun drawGlyph(glyphId: Int, sizePx: Float, sink: HbPathSink) {
         check(!closed) { "hb object disposed" }
-        val payload = buildGlyphIdPayload(fontId.toInt(), glyphId)
+        val payload = buildGlyphIdPayload(fontId.toInt(), glyphId, sizePx)
         val reply = HbWorker.send("getGlyphPath", payload) ?: return
         val svgPath = jsGetStringField(reply, "svg")
         if (svgPath.isEmpty()) return
@@ -295,7 +315,10 @@ public actual class HbFont internal constructor(
 
     public actual suspend fun glyphColorLayers(glyphId: Int): List<ColorLayer> {
         check(!closed) { "hb object disposed" }
-        val payload = buildGlyphIdPayload(fontId.toInt(), glyphId)
+        // Color-layer structure is sizeless (face-level OT-COLR data); the
+        // worker still routes through the font handle, so a unit sizePx
+        // keeps the wire format uniform without affecting the output.
+        val payload = buildGlyphIdPayload(fontId.toInt(), glyphId, DESIGN_SCALE_POINT_SIZE)
         val reply = HbWorker.send("getGlyphColorLayers", payload) ?: return emptyList()
         val layers = jsGetField(reply, "layers") ?: return emptyList()
         return decodeColorLayers(layers)
@@ -303,12 +326,19 @@ public actual class HbFont internal constructor(
 
     public actual suspend fun paintGlyph(
         glyphId: Int,
+        sizePx: Float,
         foreground: Int,
         paletteIndex: Int,
         sink: HbPaintSink,
     ) {
         check(!closed) { "hb object disposed" }
-        val payload = buildPaintGlyphPayload(fontId.toInt(), glyphId, foreground, paletteIndex)
+        val payload = buildPaintGlyphPayload(
+            fontId = fontId.toInt(),
+            gid = glyphId,
+            sizePx = sizePx,
+            foreground = foreground,
+            paletteIndex = paletteIndex,
+        )
         val reply = HbWorker.send("getGlyphPaint", payload) ?: return
         val bytes = jsGetField(reply, "bytes") ?: return
         if (jsTypedArrayLength(bytes) == 0) return
@@ -317,7 +347,9 @@ public actual class HbFont internal constructor(
 
     public actual suspend fun glyphSvg(glyphId: Int): ByteArray? {
         check(!closed) { "hb object disposed" }
-        val payload = buildGlyphIdPayload(fontId.toInt(), glyphId)
+        // SVG-in-OT bytes are sizeless face data; pass a unit sizePx for
+        // wire-format uniformity.
+        val payload = buildGlyphIdPayload(fontId.toInt(), glyphId, DESIGN_SCALE_POINT_SIZE)
         val reply = HbWorker.send("getGlyphSvg", payload) ?: return null
         val bytes = jsGetField(reply, "bytes") ?: return null
         val out = jsUint8ArrayToByteArray(bytes)
@@ -326,6 +358,7 @@ public actual class HbFont internal constructor(
 
     public actual suspend fun snapshotGlyphs(
         gids: IntArray,
+        sizePx: Float,
         flags: GlyphSnapshotFlags,
     ): GlyphSnapshot {
         check(!closed) { "hb object disposed" }
@@ -340,6 +373,7 @@ public actual class HbFont internal constructor(
         }
         val payload = buildSnapshotGlyphsPayload(
             fontId = fontId.toInt(),
+            sizePx = sizePx,
             gids = gids,
             flippedPath = flags.flippedPath,
             rawPath = flags.rawPath,

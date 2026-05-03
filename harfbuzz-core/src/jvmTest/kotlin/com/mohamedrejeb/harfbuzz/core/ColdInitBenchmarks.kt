@@ -93,7 +93,7 @@ class ColdInitBenchmarks {
         val face = HbFace.from { bytes(robotoFile.readBytes()) }
         try {
             benchN("face.toFont (Roboto, 16f)", warmup = 10, measure = 50) {
-                runBlocking { face.toFont(POINT_SIZE).close() }
+                runBlocking { face.toFont().close() }
             }
         } finally {
             face.close()
@@ -110,8 +110,8 @@ class ColdInitBenchmarks {
         benchN("first-shape (fresh face+font, Latin 12c)", warmup = 5, measure = 30) {
             runBlocking {
                 val face = HbFace.from { bytes(bytes) }
-                val font = face.toFont(POINT_SIZE)
-                font.shapeParagraph("Hello world")
+                val font = face.toFont()
+                font.shapeParagraph("Hello world", sizePx = POINT_SIZE)
                 font.close()
                 face.close()
             }
@@ -127,8 +127,8 @@ class ColdInitBenchmarks {
         benchN("cold-pipeline (bytes→face→font→shape)", warmup = 5, measure = 30) {
             runBlocking {
                 val face = HbFace.from { bytes(bytes) }
-                val font = face.toFont(POINT_SIZE)
-                font.shapeParagraph("The quick brown fox")
+                val font = face.toFont()
+                font.shapeParagraph("The quick brown fox", sizePx = POINT_SIZE)
                 font.close()
                 face.close()
             }
@@ -202,7 +202,7 @@ class ColdInitBenchmarks {
                     candidatePaths = listOf(appleColorEmoji),
                 )
                 try {
-                    resolver.fontFor(codepoint = 0x1F600, pointSize = POINT_SIZE)
+                    resolver.fontFor(codepoint = 0x1F600)
                 } finally {
                     resolver.close()
                 }

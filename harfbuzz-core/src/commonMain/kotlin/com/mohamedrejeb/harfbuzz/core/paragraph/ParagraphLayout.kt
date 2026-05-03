@@ -35,6 +35,7 @@ import com.mohamedrejeb.harfbuzz.core.shapeParagraph
  */
 public suspend fun HbFontStack.layoutParagraph(
     text: String,
+    sizePx: Float,
     maxWidth: Float,
     alignment: ParagraphAlignment = ParagraphAlignment.Start,
     baseDirection: HbDirection = HbDirection.AUTO,
@@ -55,6 +56,7 @@ public suspend fun HbFontStack.layoutParagraph(
     while (cursor < text.length) {
         val pick = pickLine(
             text = text,
+            sizePx = sizePx,
             cursor = cursor,
             breaks = breaks,
             startIdx = bIdx,
@@ -80,6 +82,7 @@ public suspend fun HbFontStack.layoutParagraph(
     if (alignment == ParagraphAlignment.Justify && justification != JustificationStrategy.None) {
         applyJustification(
             text = text,
+            sizePx = sizePx,
             rawLines = rawLines,
             maxWidth = maxWidth,
             baseDirection = baseDirection,
@@ -89,9 +92,9 @@ public suspend fun HbFontStack.layoutParagraph(
         )
     }
 
-    val ext = primary.hExtents
-    val ascent = ext?.ascender ?: (primary.pointSize * 0.8f)
-    val descent = -(ext?.descender ?: -(primary.pointSize * 0.2f))
+    val ext = primary.hExtents(sizePx)
+    val ascent = ext?.ascender ?: (sizePx * 0.8f)
+    val descent = -(ext?.descender ?: -(sizePx * 0.2f))
     val gap = ext?.lineGap ?: 0f
     val singleLineHeight = ascent + descent + gap
 
@@ -142,6 +145,7 @@ public suspend fun HbFontStack.layoutParagraph(
 
 private suspend fun HbFontStack.pickLine(
     text: String,
+    sizePx: Float,
     cursor: Int,
     breaks: IntArray,
     startIdx: Int,
@@ -169,7 +173,7 @@ private suspend fun HbFontStack.pickLine(
         // (Center / Right / End) and stops a line from reporting width
         // that includes invisible space chars.
         val visibleText = candidateText.trimEndForLineBreak()
-        val candidateShape = shapeParagraph(visibleText, baseDirection, features, language)
+        val candidateShape = shapeParagraph(visibleText, sizePx, baseDirection, features, language)
         val containsHardBreak = candidateText.indexOfLast { isHardBreakChar(it) } >= 0
 
         val fits = candidateShape.totalAdvance <= maxWidth
@@ -204,7 +208,7 @@ private suspend fun HbFontStack.pickLine(
         // Defensive fall-through: no breaks left, consume to end of text.
         val end = text.length
         val visibleText = text.substring(cursor, end).trimEndForLineBreak()
-        val shape = shapeParagraph(visibleText, baseDirection, features, language)
+        val shape = shapeParagraph(visibleText, sizePx, baseDirection, features, language)
         return LinePick(end, shape, visibleText, breaks.size, endedByHardBreak = false)
     }
     return LinePick(bestEnd, bestShape, bestText, probeIdx, endedByHardBreak)
@@ -308,6 +312,7 @@ private data class LinePick(
  */
 private suspend fun HbFontStack.applyJustification(
     text: String,
+    sizePx: Float,
     rawLines: MutableList<RawLine>,
     maxWidth: Float,
     baseDirection: HbDirection,
@@ -320,11 +325,11 @@ private suspend fun HbFontStack.applyJustification(
     val needsKashidaWidth = justification == JustificationStrategy.Mixed ||
         justification is JustificationStrategy.KashidaTo
     val kashidaWidth = if (needsKashidaWidth) {
-        shapeParagraph(ArabicTextUtils.KASHIDA.toString(), baseDirection, features, language).totalAdvance
+        shapeParagraph(ArabicTextUtils.KASHIDA.toString(), sizePx, baseDirection, features, language).totalAdvance
     } else 0f
     val thinSpaceWidth = shapeParagraph(
         WordSpacingJustifier.THIN_SPACE.toString(),
-        baseDirection, features, language,
+        sizePx, baseDirection, features, language,
     ).totalAdvance
 
     val lastIndex = rawLines.size - 1
@@ -347,7 +352,7 @@ private suspend fun HbFontStack.applyJustification(
         )
 
         if (justified.justifiedText.length != lineText.length) {
-            val newShape = shapeParagraph(justified.justifiedText, baseDirection, features, language)
+            val newShape = shapeParagraph(justified.justifiedText, sizePx, baseDirection, features, language)
             rawLines[i] = raw.copy(
                 shape = newShape,
                 shapedText = justified.justifiedText,

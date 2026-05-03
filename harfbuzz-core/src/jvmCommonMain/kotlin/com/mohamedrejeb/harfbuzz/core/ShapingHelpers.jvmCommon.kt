@@ -11,6 +11,7 @@ internal object ShapingHelpers {
         font: HbFont,
         buffer: HbBuffer,
         features: List<HbFeature>,
+        sizePx: Float,
     ): ShapedRun {
         check(!buffer.isClosed) { "hb object disposed" }
         val packed = packFeatures(features)
@@ -25,12 +26,13 @@ internal object ShapingHelpers {
         val posArr = FloatArray(count * 4)
         HarfbuzzNative.bufferReadGlyphPositions(buffer.ptr, posArr, count)
 
-        return buildShapedRun(font, buffer.direction, buffer.script, count, infoArr, posArr)
+        return buildShapedRun(font, sizePx, buffer.direction, buffer.script, count, infoArr, posArr)
     }
 
     suspend fun shapeParagraph(
         font: HbFont,
         text: String,
+        sizePx: Float,
         baseDirection: HbDirection,
         features: List<HbFeature>,
         language: HbLanguage,
@@ -76,7 +78,7 @@ internal object ShapingHelpers {
                 buf.language = language
                 buf.features = features
 
-                val shaped = font.shape(buf)
+                val shaped = font.shape(buf, sizePx)
                 val offsetGlyphs = shaped.glyphs.map { it.copy(cluster = it.cluster + run.start) }
                 val shifted = shaped.copy(glyphs = offsetGlyphs)
                 runs.add(shifted)
@@ -169,6 +171,7 @@ internal object ShapingHelpers {
 
     private suspend fun buildShapedRun(
         font: HbFont,
+        sizePx: Float,
         direction: HbDirection,
         script: HbScript,
         count: Int,
@@ -187,7 +190,7 @@ internal object ShapingHelpers {
         // of `count` per-glyph hops. Saves ~count×(JNI ABI cost + dispatcher
         // round-trip) per paragraph; the win scales with run length.
         val gids = IntArray(count) { infoArr[it * 3] }
-        val extentsList = font.glyphExtentsBatch(gids)
+        val extentsList = font.glyphExtentsBatch(gids, sizePx)
 
         var penX = 0f
         var penY = 0f

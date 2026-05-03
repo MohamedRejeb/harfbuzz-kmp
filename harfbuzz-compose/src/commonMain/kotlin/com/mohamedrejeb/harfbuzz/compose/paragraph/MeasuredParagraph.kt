@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import com.mohamedrejeb.harfbuzz.compose.MeasuredText
+import com.mohamedrejeb.harfbuzz.compose.binarySearchInt
 import com.mohamedrejeb.harfbuzz.core.HbDirection
 import com.mohamedrejeb.harfbuzz.core.HbFontStack
 import com.mohamedrejeb.harfbuzz.core.paragraph.LineLayout
@@ -204,7 +205,7 @@ public class MeasuredParagraph internal constructor(
      */
     private fun reverseJustifiedIndex(mapping: IntArray, justified: Int): Int {
         if (mapping.isEmpty()) return 0
-        val raw = mapping.binarySearch(justified)
+        val raw = mapping.binarySearchInt(justified)
         return if (raw >= 0) raw else (-raw - 2).coerceAtLeast(0)
     }
 
@@ -216,7 +217,7 @@ public class MeasuredParagraph internal constructor(
      */
     private fun findLineIndex(charIndex: Int): Int {
         val starts = lineStartsCache
-        val raw = starts.binarySearch(charIndex)
+        val raw = starts.binarySearchInt(charIndex)
         return if (raw >= 0) raw else (-raw - 2).coerceAtLeast(0)
     }
 

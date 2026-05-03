@@ -39,6 +39,7 @@ import kotlin.math.ceil
 public fun ShapedParagraphText(
     text: String,
     font: HbFont,
+    sizePx: Float,
     modifier: Modifier = Modifier,
     color: Color = Color.Unspecified,
     /**
@@ -70,6 +71,7 @@ public fun ShapedParagraphText(
     ShapedParagraphText(
         text = text,
         fontStack = stack,
+        sizePx = sizePx,
         modifier = modifier,
         color = color,
         brush = brush,
@@ -96,6 +98,7 @@ public fun ShapedParagraphText(
 public fun ShapedParagraphText(
     text: String,
     fontStack: HbFontStack,
+    sizePx: Float,
     modifier: Modifier = Modifier,
     color: Color = Color.Unspecified,
     brush: Brush? = null,
@@ -117,6 +120,7 @@ public fun ShapedParagraphText(
         val loadState by rememberMeasuredParagraph(
             text = text,
             fontStack = fontStack,
+            sizePx = sizePx,
             maxWidth = maxWidthPx,
             alignment = alignment,
             direction = direction,

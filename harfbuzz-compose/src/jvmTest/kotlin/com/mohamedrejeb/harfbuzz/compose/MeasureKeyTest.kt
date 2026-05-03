@@ -34,12 +34,13 @@ class MeasureKeyTest {
         // `variations` list regardless and returns a fresh HbFont each
         // call. Distinct identities are exactly what the cache needs to
         // see as different keys.
-        val fontA = face.toFont(16f, listOf(HbVariation.of("wght", 400f)))
-        val fontB = face.toFont(16f, listOf(HbVariation.of("wght", 700f)))
+        val fontA = face.toFont(listOf(HbVariation.of("wght", 400f)))
+        val fontB = face.toFont(listOf(HbVariation.of("wght", 700f)))
 
         val keyA = measureKeyOf(
             text = "abc",
             fontStack = HbFontStack(fontA),
+            sizePx = 16f,
             features = emptyList(),
             direction = HbDirection.AUTO,
             language = HbLanguage.AUTO,
@@ -47,6 +48,7 @@ class MeasureKeyTest {
         val keyB = measureKeyOf(
             text = "abc",
             fontStack = HbFontStack(fontB),
+            sizePx = 16f,
             features = emptyList(),
             direction = HbDirection.AUTO,
             language = HbLanguage.AUTO,
@@ -63,11 +65,12 @@ class MeasureKeyTest {
     fun `same font reference reused across stacks produces equal keys`() = runBlocking {
         harfBuzzInit()
         val face = HbFace.fromBytes(TestFonts.robotoRegular())
-        val font = face.toFont(16f)
+        val font = face.toFont()
 
         val key1 = measureKeyOf(
             text = "abc",
             fontStack = HbFontStack(font),
+            sizePx = 16f,
             features = emptyList(),
             direction = HbDirection.AUTO,
             language = HbLanguage.AUTO,
@@ -75,6 +78,7 @@ class MeasureKeyTest {
         val key2 = measureKeyOf(
             text = "abc",
             fontStack = HbFontStack(font),
+            sizePx = 16f,
             features = emptyList(),
             direction = HbDirection.AUTO,
             language = HbLanguage.AUTO,

@@ -261,13 +261,14 @@ class MeasuredParagraphCharAccessorsTest {
     ): MeasuredParagraph {
         harfBuzzInit()
         val face = HbFace.fromBytes(fontBytes)
-        val font = face.toFont(sizePx)
+        val font = face.toFont()
         openHandles.add(font)
         openHandles.add(face)
         val stack = HbFontStack(font)
         return buildMeasuredParagraph(
             text = text,
             fontStack = stack,
+            sizePx = sizePx,
             maxWidth = maxWidth,
             alignment = alignment,
             direction = direction,

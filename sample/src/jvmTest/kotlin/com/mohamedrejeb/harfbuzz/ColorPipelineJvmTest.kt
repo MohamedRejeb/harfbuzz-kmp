@@ -42,12 +42,12 @@ class ColorPipelineJvmTest {
             assertTrue(face.hasColorPaint(), "ArefRuqaaInk should advertise COLR v1 paint")
             assertTrue(face.hasColorSvg(), "ArefRuqaaInk should advertise SVG-in-OT")
 
-            face.toFont(64f).use { font ->
+            face.toFont().use { font ->
                 val gid = HbBuffer().use { buf ->
                     buf.text = "ب"
                     buf.direction = HbDirection.RTL
                     buf.script = HbScript.ARABIC
-                    val run = font.shape(buf)
+                    val run = font.shape(buf, sizePx = 64f)
                     assertTrue(run.glyphs.isNotEmpty(), "ب should shape into at least one glyph")
                     assertTrue(
                         run.glyphs.all { it.glyphId != 0 },
@@ -57,7 +57,7 @@ class ColorPipelineJvmTest {
                 }
 
                 val sink = RecordingPaintSink()
-                font.paintGlyph(gid, sink = sink)
+                font.paintGlyph(gid, sizePx = 64f, sink = sink)
                 assertTrue(sink.ops.isNotEmpty(), "paint walk should emit at least one op")
                 val hasFill = sink.ops.any { op ->
                     op is RecordedPaintOp.SolidColor ||
@@ -85,10 +85,10 @@ class ColorPipelineJvmTest {
         val bytes = readFontBytes(FontPath.EMOJI)
         HbFace.from { bytes(bytes) }.use { face ->
             assertTrue(face.hasColorSvg(), "Noto Color Emoji should ship an SVG table")
-            face.toFont(64f).use { font ->
+            face.toFont().use { font ->
                 val gid = HbBuffer().use { buf ->
                     buf.text = "😀"
-                    val run = font.shape(buf)
+                    val run = font.shape(buf, sizePx = 64f)
                     assertTrue(run.glyphs.isNotEmpty(), "smile emoji should shape")
                     run.glyphs.first { it.glyphId != 0 }.glyphId
                 }

@@ -60,23 +60,24 @@ class PathTextScreenshotTest {
         openFonts.clear()
     }
 
-    private fun loadFont(path: String, sizePx: Float): HbFont = runBlocking {
+    private fun loadFont(path: String, sizePx: Float): SizedFont = runBlocking {
         val bytes = readFontBytes(path)
         val face = HbFace.from { bytes(bytes) }
-        val font = face.toFont(sizePx)
+        val font = face.toFont()
         openFonts.add(font)
         openFonts.add(face)
-        font
+        SizedFont(font, sizePx)
     }
 
     @Test
     fun `straight horizontal line LTR`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 28f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 28f)
         rule.captureGolden("path_text_straight_ltr.png") {
             Stage(width = 600, height = 120) {
                 TextOnPath(
                     text = "Hello, kotlin-harfbuzz",
                     font = font,
+                    sizePx = sizePx,
                     path = Path().apply {
                         moveTo(20f, 60f)
                         lineTo(580f, 60f)
@@ -90,10 +91,10 @@ class PathTextScreenshotTest {
 
     @Test
     fun `half circle arc latin`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 22f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 22f)
         rule.captureGolden("path_text_half_circle.png") {
             Stage(width = 320, height = 220) {
-                val measuredState = rememberMeasuredText("circular text demo", font)
+                val measuredState = rememberMeasuredText("circular text demo", font, sizePx = sizePx)
                 val measured = (measuredState.value as? MeasuredTextLoad.Ready)?.measured
                 Box(
                     modifier = Modifier.fillMaxSize().drawBehind {
@@ -114,12 +115,13 @@ class PathTextScreenshotTest {
 
     @Test
     fun `overflow Clip drops trailing glyphs`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 20f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 20f)
         rule.captureGolden("path_text_overflow_clip.png") {
             Stage(width = 360, height = 80) {
                 TextOnPath(
                     text = "this text is much longer than the visible path will allow",
                     font = font,
+                    sizePx = sizePx,
                     path = Path().apply {
                         moveTo(20f, 40f)
                         lineTo(180f, 40f)
@@ -134,12 +136,13 @@ class PathTextScreenshotTest {
 
     @Test
     fun `overflow Visible extrapolates past path end`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 20f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 20f)
         rule.captureGolden("path_text_overflow_visible.png") {
             Stage(width = 360, height = 80) {
                 TextOnPath(
                     text = "this text overflows but stays visible",
                     font = font,
+                    sizePx = sizePx,
                     path = Path().apply {
                         moveTo(20f, 40f)
                         lineTo(180f, 40f)
@@ -154,12 +157,13 @@ class PathTextScreenshotTest {
 
     @Test
     fun `overflow Compress shrinks spacing to fit`() {
-        val font = loadFont(FontPath.LATIN_REGULAR, 20f)
+        val (font, sizePx) = loadFont(FontPath.LATIN_REGULAR, 20f)
         rule.captureGolden("path_text_overflow_compress.png") {
             Stage(width = 360, height = 80) {
                 TextOnPath(
                     text = "this text is squished into a short path",
                     font = font,
+                    sizePx = sizePx,
                     path = Path().apply {
                         moveTo(20f, 40f)
                         lineTo(340f, 40f)
@@ -178,7 +182,9 @@ class PathTextScreenshotTest {
         val arabic = loadFont(FontPath.ARABIC_BOLD, 26f)
         rule.captureGolden("path_text_mixed_tashkeel_bbox.png") {
             Stage(width = 320, height = 240) {
-                val stack = remember(latin, arabic) { HbFontStack(latin, listOf(arabic)) }
+                val stack = remember(latin.font, arabic.font) {
+                    HbFontStack(latin.font, listOf(arabic.font))
+                }
                 val arcPath = remember {
                     Path().apply { addArc(Rect(30f, 30f, 290f, 290f), 180f, 180f) }
                 }
@@ -187,6 +193,7 @@ class PathTextScreenshotTest {
                 TextOnPath(
                     text = text,
                     fontStack = stack,
+                    sizePx = latin.sizePx,
                     path = arcPath,
                     alignment = TextOnPathAlignment.Center,
                     color = Color(0xFF0F1F44),
@@ -196,6 +203,7 @@ class PathTextScreenshotTest {
                 val boundsState = rememberPathTextBounds(
                     text = text,
                     fontStack = stack,
+                    sizePx = latin.sizePx,
                     path = arcPath,
                     alignment = TextOnPathAlignment.Center,
                 )
@@ -216,12 +224,13 @@ class PathTextScreenshotTest {
 
     @Test
     fun `arabic compressed extreme tiny path`() {
-        val font = loadFont(FontPath.ARABIC_BOLD, 24f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_BOLD, 24f)
         rule.captureGolden("path_text_arabic_compress_extreme.png") {
             Stage(width = 220, height = 80) {
                 TextOnPath(
                     text = "نص عربي تجريبي للقراءة",
                     font = font,
+                    sizePx = sizePx,
                     path = Path().apply {
                         moveTo(20f, 50f)
                         lineTo(140f, 50f)
@@ -236,12 +245,13 @@ class PathTextScreenshotTest {
 
     @Test
     fun `arabic compressed on half circle arc`() {
-        val font = loadFont(FontPath.ARABIC_BOLD, 30f)
+        val (font, sizePx) = loadFont(FontPath.ARABIC_BOLD, 30f)
         rule.captureGolden("path_text_arabic_compressed_arc.png") {
             Stage(width = 280, height = 200) {
                 TextOnPath(
                     text = "نص عربي تجريبي للاختبار",
                     font = font,
+                    sizePx = sizePx,
                     path = Path().apply {
                         addArc(Rect(60f, 40f, 220f, 200f), 180f, 180f)
                     },

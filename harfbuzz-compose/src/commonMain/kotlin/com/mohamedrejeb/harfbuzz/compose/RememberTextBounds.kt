@@ -30,29 +30,31 @@ import kotlin.coroutines.cancellation.CancellationException
 public fun rememberTextBounds(
     text: String,
     font: HbFont,
+    sizePx: Float,
     features: List<HbFeature> = emptyList(),
     direction: HbDirection = HbDirection.AUTO,
     language: HbLanguage = HbLanguage.AUTO,
 ): State<MeasuredBoundsLoad> {
     val stack = remember(font) { HbFontStack(font) }
-    return rememberTextBounds(text, stack, features, direction, language)
+    return rememberTextBounds(text, stack, sizePx, features, direction, language)
 }
 
 @Composable
 public fun rememberTextBounds(
     text: String,
     fontStack: HbFontStack,
+    sizePx: Float,
     features: List<HbFeature> = emptyList(),
     direction: HbDirection = HbDirection.AUTO,
     language: HbLanguage = HbLanguage.AUTO,
 ): State<MeasuredBoundsLoad> = produceState<MeasuredBoundsLoad>(
     initialValue = MeasuredBoundsLoad.Loading,
-    text, fontStack, features, direction, language,
+    text, fontStack, sizePx, features, direction, language,
 ) {
     value = MeasuredBoundsLoad.Loading
     try {
         val result: MeasuredBoundsResult = runShapingWork {
-            fontStack.shapeOnlyBounds(text, direction, features, language)
+            fontStack.shapeOnlyBounds(text, sizePx, direction, features, language)
         }
         value = MeasuredBoundsLoad.Ready(
             bounds = result.bounds,

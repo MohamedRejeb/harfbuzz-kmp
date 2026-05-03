@@ -58,23 +58,24 @@ class ArcTextScreenshotTest {
         openFonts.clear()
     }
 
-    private fun loadFontSynchronously(path: String, sizePx: Float): HbFont = runBlocking {
+    private fun loadFontSynchronously(path: String, sizePx: Float): SizedFont = runBlocking {
         val bytes = readFontBytes(path)
         val face = HbFace.from { bytes(bytes) }
-        val font = face.toFont(sizePx)
+        val font = face.toFont()
         openFonts.add(font)
         openFonts.add(face)
-        font
+        SizedFont(font, sizePx)
     }
 
     @Test
     fun `latin roboto outside auto sweep`() {
-        val font = loadFontSynchronously(FontPath.LATIN_REGULAR, 24f)
+        val (font, sizePx) = loadFontSynchronously(FontPath.LATIN_REGULAR, 24f)
         rule.captureGolden("arc_text_latin_outside_auto.png") {
             ArcStage {
                 ArcText(
                     text = "kotlin-harfbuzz",
                     font = font,
+                    sizePx = sizePx,
                     radius = 110.dp,
                     side = ArcSide.Outside,
                     color = Color.Black,
@@ -86,12 +87,13 @@ class ArcTextScreenshotTest {
 
     @Test
     fun `arabic naskh outside auto sweep`() {
-        val font = loadFontSynchronously(FontPath.ARABIC_BOLD, 26f)
+        val (font, sizePx) = loadFontSynchronously(FontPath.ARABIC_BOLD, 26f)
         rule.captureGolden("arc_text_arabic_outside_auto.png") {
             ArcStage {
                 ArcText(
                     text = "نص عربي تجريبي للاختبار",
                     font = font,
+                    sizePx = sizePx,
                     radius = 110.dp,
                     side = ArcSide.Outside,
                     color = Color(0xFF005F73),
@@ -103,12 +105,13 @@ class ArcTextScreenshotTest {
 
     @Test
     fun `arabic naskh inside flipped letterforms`() {
-        val font = loadFontSynchronously(FontPath.ARABIC_BOLD, 22f)
+        val (font, sizePx) = loadFontSynchronously(FontPath.ARABIC_BOLD, 22f)
         rule.captureGolden("arc_text_arabic_inside.png") {
             ArcStage {
                 ArcText(
                     text = "كلمات على دائرة",
                     font = font,
+                    sizePx = sizePx,
                     radius = 110.dp,
                     side = ArcSide.Inside,
                     color = Color(0xFF8B0000),
@@ -120,12 +123,13 @@ class ArcTextScreenshotTest {
 
     @Test
     fun `latin counter clockwise rotation`() {
-        val font = loadFontSynchronously(FontPath.LATIN_REGULAR, 22f)
+        val (font, sizePx) = loadFontSynchronously(FontPath.LATIN_REGULAR, 22f)
         rule.captureGolden("arc_text_latin_counterclockwise.png") {
             ArcStage {
                 ArcText(
                     text = "around the circle",
                     font = font,
+                    sizePx = sizePx,
                     radius = 110.dp,
                     direction = ArcDirection.CounterClockwise,
                     side = ArcSide.Outside,
@@ -138,12 +142,13 @@ class ArcTextScreenshotTest {
 
     @Test
     fun `arabic fixed sweep 180 degrees`() {
-        val font = loadFontSynchronously(FontPath.ARABIC_BOLD, 24f)
+        val (font, sizePx) = loadFontSynchronously(FontPath.ARABIC_BOLD, 24f)
         rule.captureGolden("arc_text_arabic_fixed_180.png") {
             ArcStage {
                 ArcText(
                     text = "نص عربي تجريبي للاختبار",
                     font = font,
+                    sizePx = sizePx,
                     radius = 110.dp,
                     side = ArcSide.Outside,
                     color = Color(0xFF14213D),
@@ -160,7 +165,7 @@ class ArcTextScreenshotTest {
         // composable below reads density from `LocalDensity` and feeds
         // `KashidaTo(targetWidthPx)` so the justification target tracks
         // whatever the test rule resolves the radius to in pixels.
-        val font = loadFontSynchronously(FontPath.ARABIC_BOLD, 22f)
+        val (font, sizePx) = loadFontSynchronously(FontPath.ARABIC_BOLD, 22f)
         rule.captureGolden("arc_text_arabic_kashida.png") {
             ArcStage {
                 val radius = 110.dp
@@ -169,6 +174,7 @@ class ArcTextScreenshotTest {
                 val loadState by rememberMeasuredText(
                     text = "نص عربي",
                     font = font,
+                    sizePx = sizePx,
                     justification = JustificationStrategy.KashidaTo(arcLenPx),
                 )
                 val measured = (loadState as? MeasuredTextLoad.Ready)?.measured
@@ -187,12 +193,13 @@ class ArcTextScreenshotTest {
 
     @Test
     fun `latin centered alignment with start angle`() {
-        val font = loadFontSynchronously(FontPath.LATIN_REGULAR, 22f)
+        val (font, sizePx) = loadFontSynchronously(FontPath.LATIN_REGULAR, 22f)
         rule.captureGolden("arc_text_latin_centered.png") {
             ArcStage {
                 ArcText(
                     text = "centered up top",
                     font = font,
+                    sizePx = sizePx,
                     radius = 110.dp,
                     startAngle = -90f,
                     alignment = ArcAlignment.Center,

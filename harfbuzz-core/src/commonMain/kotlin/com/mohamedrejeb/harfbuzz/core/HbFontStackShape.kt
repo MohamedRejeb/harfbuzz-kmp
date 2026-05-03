@@ -29,6 +29,7 @@ package com.mohamedrejeb.harfbuzz.core
  */
 public suspend fun HbFontStack.shapeParagraph(
     text: String,
+    sizePx: Float,
     baseDirection: HbDirection = HbDirection.AUTO,
     features: List<HbFeature> = emptyList(),
     language: HbLanguage = HbLanguage.AUTO,
@@ -53,7 +54,7 @@ public suspend fun HbFontStack.shapeParagraph(
         isBoringText(text)
     ) {
         return HbBuffer().use { buf ->
-            val run = shapeOnce(text, primary, isRtl = false, language, features, buf)
+            val run = shapeOnce(text, primary, sizePx, isRtl = false, language, features, buf)
             ShapedParagraph(
                 runs = listOf(run),
                 baseDirection = HbDirection.LTR,
@@ -69,7 +70,7 @@ public suspend fun HbFontStack.shapeParagraph(
     if (fallbacks.isEmpty() && systemResolver == null) {
         // Fast path: no fallback chain and no system resolver. Delegate to
         // single-font shaping and just tag every run with the primary font.
-        val p = primary.shapeParagraph(text, baseDirection, features, language)
+        val p = primary.shapeParagraph(text, sizePx, baseDirection, features, language)
         return p.copy(runs = p.runs.map { it.copy(font = primary) })
     }
 
@@ -113,7 +114,7 @@ public suspend fun HbFontStack.shapeParagraph(
                 features = features,
                 fonts = fonts,
                 systemResolver = systemResolver,
-                pointSize = primary.pointSize,
+                sizePx = sizePx,
                 buffer = buf,
             )
 
@@ -171,12 +172,12 @@ private suspend fun shapeRunWithFallback(
     features: List<HbFeature>,
     fonts: List<HbFont>,
     systemResolver: SystemFontResolver?,
-    pointSize: Float,
+    sizePx: Float,
     buffer: HbBuffer,
 ): List<ShapedRun> {
     if (text.isEmpty() || fonts.isEmpty()) return emptyList()
     val primary = fonts.first()
-    val primaryRun = shapeOnce(text, primary, isRtl, language, features, buffer)
+    val primaryRun = shapeOnce(text, primary, sizePx, isRtl, language, features, buffer)
 
     // Bottom of the explicit chain AND no system resolver → accept primary.
     if (fonts.size == 1 && systemResolver == null) return listOf(primaryRun)
@@ -234,7 +235,7 @@ private suspend fun shapeRunWithFallback(
                 // HarfBuzz pick the right script per-substring; the cost is one
                 // extra shape() per resolved interval which is negligible for
                 // the typical mostly-resolved-or-fully-unresolved input.
-                listOf(shapeOnce(sub, primary, isRtl, language, features, buffer))
+                listOf(shapeOnce(sub, primary, sizePx, isRtl, language, features, buffer))
             }
             fonts.size > 1 -> {
                 // Recurse into the next font in the explicit chain. The system
@@ -247,7 +248,7 @@ private suspend fun shapeRunWithFallback(
                     features = features,
                     fonts = fonts.drop(1),
                     systemResolver = systemResolver,
-                    pointSize = pointSize,
+                    sizePx = sizePx,
                     buffer = buffer,
                 )
             }
@@ -258,20 +259,20 @@ private suspend fun shapeRunWithFallback(
                 // multi-codepoint clusters (graphemes, ligatures) share the
                 // same script and therefore the same covering font.
                 val firstCp = firstCodePoint(sub)
-                val sysFont = systemResolver.fontFor(firstCp, pointSize)
+                val sysFont = systemResolver.fontFor(firstCp)
                 if (sysFont != null) {
-                    listOf(shapeOnce(sub, sysFont, isRtl, language, features, buffer))
+                    listOf(shapeOnce(sub, sysFont, sizePx, isRtl, language, features, buffer))
                 } else {
                     // System has nothing either - fall back to the primary's
                     // notdef glyphs for this interval (already shaped above as
                     // part of primaryRun, but re-shape the slice to keep the
                     // sub-run output consistent and font-tagged correctly).
-                    listOf(shapeOnce(sub, primary, isRtl, language, features, buffer))
+                    listOf(shapeOnce(sub, primary, sizePx, isRtl, language, features, buffer))
                 }
             }
             else -> {
                 // Tail of the chain with no system fallback → keep notdefs.
-                listOf(shapeOnce(sub, primary, isRtl, language, features, buffer))
+                listOf(shapeOnce(sub, primary, sizePx, isRtl, language, features, buffer))
             }
         }
         for (p in pieces) {
@@ -285,6 +286,7 @@ private suspend fun shapeRunWithFallback(
 private suspend fun shapeOnce(
     text: String,
     font: HbFont,
+    sizePx: Float,
     isRtl: Boolean,
     language: HbLanguage,
     features: List<HbFeature>,
@@ -297,7 +299,7 @@ private suspend fun shapeOnce(
     // the single-font ShapingHelpers pragma).
     buffer.language = language
     buffer.features = features
-    return font.shape(buffer).copy(font = font)
+    return font.shape(buffer, sizePx).copy(font = font)
 }
 
 private data class IntervalRange(val start: Int, val end: Int, val isNotdef: Boolean)

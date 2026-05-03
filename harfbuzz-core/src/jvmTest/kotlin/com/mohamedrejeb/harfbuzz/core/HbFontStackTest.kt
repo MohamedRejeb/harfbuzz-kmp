@@ -41,8 +41,8 @@ class HbFontStackTest {
         require(notoArabicFile.exists()) { "Noto Naskh Arabic font not found at ${notoArabicFile.absolutePath}" }
         robotoFace = HbFace.from { bytes(robotoFile.readBytes()) }
         arabicFace = HbFace.from { bytes(notoArabicFile.readBytes()) }
-        roboto = robotoFace.toFont(24f)
-        arabic = arabicFace.toFont(24f)
+        roboto = robotoFace.toFont()
+        arabic = arabicFace.toFont()
     }
 
     @AfterTest
@@ -56,7 +56,7 @@ class HbFontStackTest {
     @Test
     fun `single-font stack delegates to primary shapeParagraph and tags font`() = runBlocking {
         val stack = HbFontStack(roboto)
-        val paragraph = stack.shapeParagraph("Hello", baseDirection = HbDirection.LTR)
+        val paragraph = stack.shapeParagraph("Hello", sizePx = 24f, baseDirection = HbDirection.LTR)
 
         assertTrue(paragraph.runs.isNotEmpty())
         paragraph.runs.forEach { run ->
@@ -68,7 +68,7 @@ class HbFontStackTest {
     @Test
     fun `Latin primary alone leaves Arabic clusters as notdef`() = runBlocking {
         // Establish baseline: Roboto on Arabic text → all .notdef.
-        val paragraph = roboto.shapeParagraph("مرحبا", baseDirection = HbDirection.RTL)
+        val paragraph = roboto.shapeParagraph("مرحبا", sizePx = 24f, baseDirection = HbDirection.RTL)
         val gids = paragraph.runs.flatMap { it.glyphs.map { g -> g.glyphId } }
         assertTrue(gids.isNotEmpty())
         assertTrue(gids.all { it == 0 }, "Roboto has no Arabic glyphs - expect all .notdef, got $gids")
@@ -77,7 +77,7 @@ class HbFontStackTest {
     @Test
     fun `fallback resolves Arabic clusters when primary cannot`() = runBlocking {
         val stack = HbFontStack(roboto, fallbacks = listOf(arabic))
-        val paragraph = stack.shapeParagraph("مرحبا", baseDirection = HbDirection.RTL)
+        val paragraph = stack.shapeParagraph("مرحبا", sizePx = 24f, baseDirection = HbDirection.RTL)
 
         assertTrue(paragraph.runs.isNotEmpty())
         // Every glyph should have resolved (non-notdef) and be attributed
@@ -96,6 +96,7 @@ class HbFontStackTest {
         // direction-runs first, then per-cluster fallback resolves each.
         val paragraph = stack.shapeParagraph(
             text = "Hi مرحبا",
+            sizePx = 24f,
             baseDirection = HbDirection.LTR,
         )
         assertTrue(paragraph.runs.size >= 2)
@@ -118,7 +119,7 @@ class HbFontStackTest {
     fun `cluster offsets remain in original paragraph coordinates after fallback`() = runBlocking {
         val stack = HbFontStack(roboto, fallbacks = listOf(arabic))
         val text = "Hi مرحبا"
-        val paragraph = stack.shapeParagraph(text, baseDirection = HbDirection.LTR)
+        val paragraph = stack.shapeParagraph(text, sizePx = 24f, baseDirection = HbDirection.LTR)
 
         val clusters = paragraph.runs.flatMap { it.glyphs.map { g -> g.cluster } }
         // Clusters must be valid UTF-16 indices into the original `text`.
@@ -135,7 +136,7 @@ class HbFontStackTest {
         // Pin `system = None` so the host platform's fonts don't satisfy the
         // Arabic clusters that we want to assert end up as .notdef.
         val stack = HbFontStack(roboto, fallbacks = emptyList(), system = SystemFallback.None)
-        val paragraph = stack.shapeParagraph("مرحبا", baseDirection = HbDirection.RTL)
+        val paragraph = stack.shapeParagraph("مرحبا", sizePx = 24f, baseDirection = HbDirection.RTL)
         val gids = paragraph.runs.flatMap { it.glyphs.map { g -> g.glyphId } }
         assertTrue(gids.isNotEmpty(), "should still produce shaping output")
         assertTrue(gids.all { it == 0 }, "exhausted chain → primary's .notdef wins")
@@ -154,6 +155,7 @@ class HbFontStackTest {
         // last run should be the Arabic (rightmost).
         val paragraph = stack.shapeParagraph(
             text = "مرحبا Hi",
+            sizePx = 24f,
             baseDirection = HbDirection.RTL,
         )
         assertTrue(paragraph.runs.size >= 2)
@@ -172,7 +174,7 @@ class HbFontStackTest {
     @Test
     fun `empty text produces empty paragraph`() = runBlocking {
         val stack = HbFontStack(roboto, fallbacks = listOf(arabic))
-        val paragraph = stack.shapeParagraph("", baseDirection = HbDirection.LTR)
+        val paragraph = stack.shapeParagraph("", sizePx = 24f, baseDirection = HbDirection.LTR)
         assertTrue(paragraph.isEmpty)
         assertEquals(0f, paragraph.totalAdvance)
     }
@@ -180,7 +182,7 @@ class HbFontStackTest {
     @Test
     fun `single resolvable cluster does not pay fallback cost`() = runBlocking {
         val stack = HbFontStack(roboto, fallbacks = listOf(arabic))
-        val paragraph = stack.shapeParagraph("Hello", baseDirection = HbDirection.LTR)
+        val paragraph = stack.shapeParagraph("Hello", sizePx = 24f, baseDirection = HbDirection.LTR)
         // Every cluster should be attributed to Roboto - no fallback attempt
         // even though Arabic is configured as a fallback.
         paragraph.runs.forEach { run ->
