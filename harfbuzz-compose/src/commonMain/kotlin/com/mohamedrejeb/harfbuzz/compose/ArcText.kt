@@ -10,6 +10,9 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.drawscope.DrawStyle
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.unit.Dp
 import com.mohamedrejeb.harfbuzz.core.HbFeature
 import com.mohamedrejeb.harfbuzz.core.HbFont
@@ -38,6 +41,8 @@ public fun ArcText(
     color: Color = Color.Black,
     alignment: ArcAlignment = ArcAlignment.Start,
     features: List<HbFeature> = emptyList(),
+    style: DrawStyle = Fill,
+    shadow: Shadow? = null,
 ) {
     val loadState by rememberMeasuredText(text, font, features)
     val measured = (loadState as? MeasuredTextLoad.Ready)?.measured
@@ -57,6 +62,7 @@ public fun ArcText(
                 measured = measured,
                 path = arcPath,
                 color = color,
+                style = style,
                 alignment = when (alignment) {
                     ArcAlignment.Start -> TextOnPathAlignment.Start
                     ArcAlignment.Center -> TextOnPathAlignment.Center
@@ -64,6 +70,7 @@ public fun ArcText(
                 },
                 overflow = TextOnPathOverflow.Clip,
                 autoFlip = false,
+                shadow = shadow,
             )
         },
         content = {},
@@ -82,6 +89,8 @@ public fun ArcText(
     color: Color = Color.Black,
     alignment: ArcAlignment = ArcAlignment.Start,
     features: List<HbFeature> = emptyList(),
+    style: DrawStyle = Fill,
+    shadow: Shadow? = null,
 ) {
     val loadState by rememberMeasuredText(text, fontStack, features)
     val measured = (loadState as? MeasuredTextLoad.Ready)?.measured
@@ -101,6 +110,7 @@ public fun ArcText(
                 measured = measured,
                 path = arcPath,
                 color = color,
+                style = style,
                 alignment = when (alignment) {
                     ArcAlignment.Start -> TextOnPathAlignment.Start
                     ArcAlignment.Center -> TextOnPathAlignment.Center
@@ -108,6 +118,7 @@ public fun ArcText(
                 },
                 overflow = TextOnPathOverflow.Clip,
                 autoFlip = false,
+                shadow = shadow,
             )
         },
         content = {},

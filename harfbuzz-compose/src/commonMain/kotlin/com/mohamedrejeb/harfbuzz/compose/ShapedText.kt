@@ -8,6 +8,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.drawscope.DrawStyle
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,6 +45,20 @@ public fun ShapedText(
      * suppress that and use [color] for every glyph.
      */
     forceForegroundColor: Boolean = false,
+    /**
+     * Render glyphs as filled shapes (default) or stroked outlines. A
+     * non-Fill style routes every glyph to the silhouette outline, so a
+     * stroke applies to the actual glyph shape regardless of color
+     * tables (SVG bitmaps and COLR paint trees fall through).
+     */
+    style: DrawStyle = Fill,
+    /**
+     * Optional drop shadow with offset, blur radius, and color. Renders
+     * underneath the main text. The shadow follows [style] (a stroked
+     * text gets a stroked shadow) and uses the silhouette only for color
+     * glyphs - same convention as Compose's `BasicText` shadow.
+     */
+    shadow: Shadow? = null,
     onTextLayout: ((MeasuredText) -> Unit)? = null,
 ) {
     val stack = remember(font) { HbFontStack(font) }
@@ -56,6 +73,8 @@ public fun ShapedText(
         overflow = overflow,
         maxLines = maxLines,
         forceForegroundColor = forceForegroundColor,
+        style = style,
+        shadow = shadow,
         onTextLayout = onTextLayout,
     )
 }
@@ -78,6 +97,8 @@ public fun ShapedText(
     overflow: TextOverflow = TextOverflow.Clip,
     maxLines: Int = Int.MAX_VALUE,
     forceForegroundColor: Boolean = false,
+    style: DrawStyle = Fill,
+    shadow: Shadow? = null,
     onTextLayout: ((MeasuredText) -> Unit)? = null,
 ) {
     val loadState by rememberMeasuredText(text, fontStack, features, direction)
@@ -103,7 +124,13 @@ public fun ShapedText(
             }
             .drawBehind {
                 if (measured != null) {
-                    drawShapedText(measured, color = resolvedColor, forceForegroundColor = forceForegroundColor)
+                    drawShapedText(
+                        measured = measured,
+                        color = resolvedColor,
+                        style = style,
+                        forceForegroundColor = forceForegroundColor,
+                        shadow = shadow,
+                    )
                 }
             },
         content = {},

@@ -3,10 +3,13 @@ package com.mohamedrejeb.harfbuzz.compose
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.DrawStyle
 import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.rotateRad
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
@@ -24,6 +27,15 @@ import kotlin.math.PI
  * so every color-glyph format the library supports works on path text
  * without special cases.
  *
+ * A non-Fill [style] (e.g. `Stroke`) routes every glyph to the silhouette
+ * outline so the stroke applies to the actual glyph shape - same rule
+ * as [drawShapedText].
+ *
+ * If [shadow] is non-null, the silhouette of every placed glyph is
+ * stamped with a Gaussian-blurred copy underneath, translated by
+ * `shadow.offset` in screen space. The shadow rotates with each glyph's
+ * tangent, matching how Compose's `BasicText` text-on-path shadow works.
+ *
  * Multi-contour paths: only the first contour is walked. Multi-contour
  * traversal is future work.
  */
@@ -40,6 +52,7 @@ public fun DrawScope.drawTextAlongPath(
     overflow: TextOnPathOverflow = TextOnPathOverflow.Clip,
     autoFlip: Boolean = false,
     forceForegroundColor: Boolean = false,
+    shadow: Shadow? = null,
 ) {
     if (measured.isEmpty) return
 
@@ -52,8 +65,24 @@ public fun DrawScope.drawTextAlongPath(
     for (run in measured.paragraph.runs) {
         val font = run.font ?: measured.font
         if (font !in cachesByFont) {
-            cachesByFont[font] = measured.runCachesFor(font, forceForegroundColor)
+            cachesByFont[font] = measured.runCachesFor(font, forceForegroundColor, style)
         }
+    }
+
+    if (shadow != null) {
+        drawShadowAlongPath(
+            measured = measured,
+            path = path,
+            shadow = shadow,
+            alpha = alpha,
+            style = style,
+            blendMode = blendMode,
+            startOffset = startOffset,
+            side = side,
+            alignment = alignment,
+            overflow = overflow,
+            autoFlip = autoFlip,
+        )
     }
 
     walkPathText(
@@ -68,7 +97,7 @@ public fun DrawScope.drawTextAlongPath(
     ) { p ->
         val pos = p.glyphPosition
         val caches = cachesByFont[p.runFont]
-            ?: measured.runCachesFor(p.runFont, forceForegroundColor)
+            ?: measured.runCachesFor(p.runFont, forceForegroundColor, style)
         // Apply the transform stack from spec §7.2 (innermost → outermost).
         translate(left = p.position.x, top = p.position.y) {
             rotateRad(radians = p.angleRadians, pivot = Offset.Zero) {
@@ -94,5 +123,62 @@ public fun DrawScope.drawTextAlongPath(
                 }
             }
         }
+    }
+}
+
+/**
+ * Walk the path text once and stamp each glyph's silhouette under a
+ * shadow paint. The shadow is offset in screen space (via the outer
+ * canvas translate), so it follows each glyph's tangent rotation but
+ * does not rotate itself relative to the screen.
+ */
+private fun DrawScope.drawShadowAlongPath(
+    measured: MeasuredText,
+    path: Path,
+    shadow: Shadow,
+    alpha: Float,
+    style: DrawStyle,
+    blendMode: BlendMode,
+    startOffset: Float,
+    side: TextOnPathSide,
+    alignment: TextOnPathAlignment,
+    overflow: TextOnPathOverflow,
+    autoFlip: Boolean,
+) {
+    val paint = Paint().apply {
+        color = shadow.color
+        this.alpha = alpha
+        this.blendMode = blendMode
+        applyDrawStyleToPaint(this, style)
+        configureShadowBlur(this, shadow.blurRadius)
+    }
+    drawIntoCanvas { canvas ->
+        canvas.save()
+        canvas.translate(shadow.offset.x, shadow.offset.y)
+        walkPathText(
+            paragraph = measured.paragraph,
+            primaryFont = measured.font,
+            path = path,
+            startOffset = startOffset,
+            side = side,
+            alignment = alignment,
+            overflow = overflow,
+            autoFlip = autoFlip,
+        ) { p ->
+            val pos = p.glyphPosition
+            val flipped = measured.flippedPathsByFont[p.runFont] ?: emptyMap()
+            val gid = p.run.glyphs[p.glyphIndexInRun].glyphId
+            val glyphPath = flipped[gid] ?: return@walkPathText
+            canvas.save()
+            canvas.translate(p.position.x, p.position.y)
+            canvas.rotate(p.angleRadians * (180f / PI.toFloat()))
+            if (p.flipDueToAutoFlip) canvas.rotate(180f)
+            val sideScaleY = if (side == TextOnPathSide.Below) -1f else 1f
+            if (sideScaleY != 1f) canvas.scale(1f, sideScaleY)
+            canvas.translate(-pos.xAdvance / 2f + pos.xOffset, -pos.yOffset)
+            canvas.drawPath(glyphPath, paint)
+            canvas.restore()
+        }
+        canvas.restore()
     }
 }

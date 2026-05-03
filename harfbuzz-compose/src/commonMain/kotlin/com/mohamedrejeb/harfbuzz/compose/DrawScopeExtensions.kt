@@ -6,10 +6,14 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.DrawStyle
 import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.unit.IntOffset
@@ -37,6 +41,18 @@ import com.mohamedrejeb.harfbuzz.core.replay
  *  4. **COLR v0 layer stack** - composites the recorded layer stack with
  *     palette colors. Used for legacy color fonts without paint trees.
  *  5. **Monochrome** - fall-through: draw the glyph outline with [color].
+ *
+ * A non-Fill [style] (e.g. [Stroke]) applies to the monochrome outline
+ * path: SVG bitmaps and COLR paint trees fall through to the silhouette
+ * outline so the stroke is the user's stroke, not a degenerate frame
+ * around a clip rectangle. Pass [forceForegroundColor] = true with
+ * [Fill] if you want a flat colored render of a color font.
+ *
+ * If [shadow] is non-null, every glyph's silhouette path is drawn first
+ * with the shadow color and a Gaussian blur underneath the main render.
+ * The shadow follows [style], so a stroked text gets a stroked shadow.
+ * For color glyphs the shadow uses the silhouette only, which matches
+ * Compose's `BasicText` `TextStyle.shadow` convention.
  */
 public fun DrawScope.drawShapedText(
     measured: MeasuredText,
@@ -46,12 +62,28 @@ public fun DrawScope.drawShapedText(
     style: DrawStyle = Fill,
     blendMode: BlendMode = DrawScope.DefaultBlendMode,
     forceForegroundColor: Boolean = false,
+    shadow: Shadow? = null,
 ) {
     if (measured.isEmpty) return
 
     val baselineY = topLeft.y + measured.baseline
-    var penX = topLeft.x
-    var penY = baselineY
+    val penX = topLeft.x
+    val penY = baselineY
+
+    if (shadow != null) {
+        drawShadowPass(
+            measured = measured,
+            penX = penX + shadow.offset.x,
+            penY = penY + shadow.offset.y,
+            shadow = shadow,
+            alpha = alpha,
+            style = style,
+            blendMode = blendMode,
+        )
+    }
+
+    var loopX = penX
+    var loopY = penY
 
     for (run in measured.paragraph.runs) {
         // Each run is shaped by exactly one font (its [ShapedRun.font]).
@@ -66,10 +98,10 @@ public fun DrawScope.drawShapedText(
         // glyph in this run, but `drawOneGlyphAtOrigin` used to recompute
         // them per call. For a 200-glyph paragraph this saves ~800 outer-map
         // lookups per draw frame.
-        val caches = measured.runCachesFor(runFont, forceForegroundColor)
+        val caches = measured.runCachesFor(runFont, forceForegroundColor, style)
 
-        var localX = penX
-        var localY = penY
+        var localX = loopX
+        var localY = loopY
         for (i in run.glyphs.indices) {
             val gid = run.glyphs[i].glyphId
             val pos = run.positions[i]
@@ -94,8 +126,73 @@ public fun DrawScope.drawShapedText(
             localX += pos.xAdvance
             localY += pos.yAdvance
         }
-        penX = localX
-        penY = localY
+        loopX = localX
+        loopY = localY
+    }
+}
+
+/**
+ * Walk every glyph in [measured] and stamp its silhouette path under a
+ * paint configured with [shadow]'s color, alpha multiplier, blend mode,
+ * and Gaussian blur. [penX] / [penY] is the shadow's pen origin (already
+ * offset by `shadow.offset`).
+ */
+private fun DrawScope.drawShadowPass(
+    measured: MeasuredText,
+    penX: Float,
+    penY: Float,
+    shadow: Shadow,
+    alpha: Float,
+    style: DrawStyle,
+    blendMode: BlendMode,
+) {
+    val paint = Paint().apply {
+        color = shadow.color
+        this.alpha = alpha
+        this.blendMode = blendMode
+        applyDrawStyleToPaint(this, style)
+        configureShadowBlur(this, shadow.blurRadius)
+    }
+    drawIntoCanvas { canvas ->
+        var localPenX = penX
+        var localPenY = penY
+        for (run in measured.paragraph.runs) {
+            val runFont = run.font ?: measured.font
+            val flipped = measured.flippedPathsByFont[runFont] ?: emptyMap()
+            var localX = localPenX
+            var localY = localPenY
+            for (i in run.glyphs.indices) {
+                val gid = run.glyphs[i].glyphId
+                val pos = run.positions[i]
+                val drawX = localX + pos.xOffset
+                val drawY = localY - pos.yOffset
+                val path = flipped[gid]
+                if (path != null) {
+                    canvas.save()
+                    canvas.translate(drawX, drawY)
+                    canvas.drawPath(path, paint)
+                    canvas.restore()
+                }
+                localX += pos.xAdvance
+                localY += pos.yAdvance
+            }
+            localPenX = localX
+            localPenY = localY
+        }
+    }
+}
+
+internal fun applyDrawStyleToPaint(paint: Paint, style: DrawStyle) {
+    when (style) {
+        is Fill -> paint.style = PaintingStyle.Fill
+        is Stroke -> {
+            paint.style = PaintingStyle.Stroke
+            paint.strokeWidth = style.width
+            paint.strokeMiterLimit = style.miter
+            paint.strokeCap = style.cap
+            paint.strokeJoin = style.join
+            paint.pathEffect = style.pathEffect
+        }
     }
 }
 
@@ -244,10 +341,12 @@ private fun DrawScope.drawV1PaintTree(
  * from "4 outer Map<HbFont, _> lookups + 3 boolean recompute" into
  * "1 inner Map<Int, _> lookup".
  *
- * `useSvg` / `useV1Paint` / `useV0Layers` honour the
- * `forceForegroundColor` precedence: when the caller asked for a
- * monochrome render, every flag here is `false` and
- * [drawOneGlyphAtOrigin] falls through to the outline path.
+ * `useSvg` / `useV1Paint` / `useV0Layers` honour both the
+ * `forceForegroundColor` precedence and the `style` precedence: only
+ * `Fill` keeps the color-glyph paths active. Any non-Fill style (e.g.
+ * `Stroke`) flips every flag to `false` so [drawOneGlyphAtOrigin] falls
+ * through to the silhouette outline and the caller's stroke applies to
+ * the actual glyph shape.
  */
 internal class RunGlyphCaches(
     val flippedPaths: Map<Int, Path>,
@@ -263,15 +362,24 @@ internal class RunGlyphCaches(
 internal fun MeasuredText.runCachesFor(
     runFont: HbFont,
     forceForegroundColor: Boolean,
+    style: DrawStyle,
 ): RunGlyphCaches {
     val flipped = flippedPathsByFont[runFont] ?: emptyMap()
     val raw = rawPathsByFont[runFont] ?: emptyMap()
     val paintTrees = paintTreesByFont[runFont]
     val v0Layers = colorLayersByFont[runFont]
     val svgCache = svgGlyphCachesByFont[runFont]
-    val useSvg = !forceForegroundColor && svgCache?.hasAnyGlyphs == true
-    val useV1Paint = !forceForegroundColor && !useSvg && !paintTrees.isNullOrEmpty()
-    val useV0Layers = !forceForegroundColor && !useSvg && !useV1Paint && !v0Layers.isNullOrEmpty()
+    // SVG bitmaps are raster (no path to stroke) and the COLR v1 painter
+    // floods a 1M-px cover rectangle clipped to the glyph - stroking that
+    // would draw a frame around the cover, not the glyph. For non-Fill
+    // styles we fall through to the silhouette outline so the caller's
+    // stroke applies to the actual glyph shape. v0 layers follow the
+    // same rule for consistency: a stroked emoji renders as a stroked
+    // silhouette, not a stack of stroked colored layers.
+    val isFill = style is Fill
+    val useSvg = isFill && !forceForegroundColor && svgCache?.hasAnyGlyphs == true
+    val useV1Paint = isFill && !forceForegroundColor && !useSvg && !paintTrees.isNullOrEmpty()
+    val useV0Layers = isFill && !forceForegroundColor && !useSvg && !useV1Paint && !v0Layers.isNullOrEmpty()
     return RunGlyphCaches(
         flippedPaths = flipped,
         rawPaths = raw,
