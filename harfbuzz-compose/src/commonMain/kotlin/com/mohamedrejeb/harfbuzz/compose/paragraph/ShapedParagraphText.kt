@@ -19,6 +19,7 @@ import com.mohamedrejeb.harfbuzz.core.HbFeature
 import com.mohamedrejeb.harfbuzz.core.HbFont
 import com.mohamedrejeb.harfbuzz.core.HbFontStack
 import com.mohamedrejeb.harfbuzz.core.HbLanguage
+import com.mohamedrejeb.harfbuzz.compose.StyledText
 import com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy
 import com.mohamedrejeb.harfbuzz.core.paragraph.ParagraphAlignment
 import kotlin.math.ceil
@@ -175,3 +176,126 @@ public fun ShapedParagraphText(
 }
 
 private fun min(a: Int, b: Int): Int = if (a < b) a else b
+
+/**
+ * Styled-text variant of [ShapedParagraphText]. Same shaping and
+ * line-breaking as the [String] overload above; per-character paint
+ * comes from [text]'s spans (sliced per line, translated through
+ * justification mapping where applicable).
+ */
+@Composable
+public fun ShapedParagraphText(
+    text: StyledText,
+    font: HbFont,
+    sizePx: Float,
+    modifier: Modifier = Modifier,
+    color: Color = Color.Unspecified,
+    brush: Brush? = null,
+    alignment: ParagraphAlignment = ParagraphAlignment.Start,
+    direction: HbDirection = HbDirection.AUTO,
+    features: List<HbFeature> = emptyList(),
+    language: HbLanguage = HbLanguage.AUTO,
+    lineSpacing: Float = 0f,
+    justification: JustificationStrategy = JustificationStrategy.None,
+    forceForegroundColor: Boolean = false,
+    style: DrawStyle = Fill,
+    shadow: Shadow? = null,
+    maxWidthOverride: Float? = null,
+    onTextLayout: ((MeasuredParagraph) -> Unit)? = null,
+) {
+    val stack = remember(font) { HbFontStack(font) }
+    ShapedParagraphText(
+        text = text,
+        fontStack = stack,
+        sizePx = sizePx,
+        modifier = modifier,
+        color = color,
+        brush = brush,
+        alignment = alignment,
+        direction = direction,
+        features = features,
+        language = language,
+        lineSpacing = lineSpacing,
+        justification = justification,
+        forceForegroundColor = forceForegroundColor,
+        style = style,
+        shadow = shadow,
+        maxWidthOverride = maxWidthOverride,
+        onTextLayout = onTextLayout,
+    )
+}
+
+/**
+ * Multi-font [ShapedParagraphText] taking [StyledText].
+ */
+@Composable
+public fun ShapedParagraphText(
+    text: StyledText,
+    fontStack: HbFontStack,
+    sizePx: Float,
+    modifier: Modifier = Modifier,
+    color: Color = Color.Unspecified,
+    brush: Brush? = null,
+    alignment: ParagraphAlignment = ParagraphAlignment.Start,
+    direction: HbDirection = HbDirection.AUTO,
+    features: List<HbFeature> = emptyList(),
+    language: HbLanguage = HbLanguage.AUTO,
+    lineSpacing: Float = 0f,
+    justification: JustificationStrategy = JustificationStrategy.None,
+    forceForegroundColor: Boolean = false,
+    style: DrawStyle = Fill,
+    shadow: Shadow? = null,
+    maxWidthOverride: Float? = null,
+    onTextLayout: ((MeasuredParagraph) -> Unit)? = null,
+) {
+    BoxWithConstraints(modifier = modifier) {
+        val maxWidthPx = maxWidthOverride
+            ?: this@BoxWithConstraints.constraints.maxWidth.toFloat()
+        val loadState by rememberMeasuredParagraph(
+            text = text.text,
+            fontStack = fontStack,
+            sizePx = sizePx,
+            maxWidth = maxWidthPx,
+            alignment = alignment,
+            direction = direction,
+            features = features,
+            language = language,
+            lineSpacing = lineSpacing,
+            justification = justification,
+        )
+        val resolvedColor = color.takeOrElse { Color.Black }
+        val measured: MeasuredParagraph? = (loadState as? MeasuredParagraphLoad.Ready)?.measured
+
+        LaunchedEffect(measured) {
+            if (measured != null) onTextLayout?.invoke(measured)
+        }
+
+        androidx.compose.foundation.layout.Box(
+            modifier = Modifier
+                .layout { measurable, constraints ->
+                    val width = if (measured == null || measured.isEmpty) 0
+                    else min(constraints.maxWidth, ceil(measured.width).toInt().coerceAtLeast(0))
+                    val height = if (measured == null || measured.isEmpty) 0
+                    else ceil(measured.height).toInt().coerceAtLeast(0)
+                    val placeable = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+                    layout(width, height) {
+                        placeable.place(0, 0)
+                    }
+                }
+                .drawBehind {
+                    if (measured != null) {
+                        drawShapedParagraph(
+                            paragraph = measured,
+                            styledText = text,
+                            color = resolvedColor,
+                            brush = brush,
+                            style = style,
+                            forceForegroundColor = forceForegroundColor,
+                            shadow = shadow,
+                        )
+                    }
+                },
+            content = {},
+        )
+    }
+}
