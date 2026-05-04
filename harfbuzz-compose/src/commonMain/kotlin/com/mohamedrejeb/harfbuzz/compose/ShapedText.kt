@@ -186,6 +186,207 @@ public fun ShapedText(
     }
 }
 
+/**
+ * Styled-text variant of [ShapedText]. Same shaping as the [String]
+ * overload above; per-character paint comes from [text]'s spans via
+ * the cluster-position heuristic. The composable's [color] / [brush]
+ * are the **default** paint for chars no span covers.
+ *
+ * For empty [StyledText.spans] this is byte-identical to the
+ * [String] overload (the styled draw path dispatches back to the
+ * uniform-paint internal in that case).
+ */
+@Composable
+public fun ShapedText(
+    text: StyledText,
+    font: HbFont,
+    sizePx: Float,
+    modifier: Modifier = Modifier,
+    color: Color = Color.Unspecified,
+    brush: Brush? = null,
+    features: List<HbFeature> = emptyList(),
+    direction: HbDirection = HbDirection.AUTO,
+    overflow: ShapedTextOverflow = ShapedTextOverflow.Clip,
+    alignment: ParagraphAlignment = ParagraphAlignment.Start,
+    justification: JustificationStrategy = JustificationStrategy.None,
+    forceForegroundColor: Boolean = false,
+    style: DrawStyle = Fill,
+    shadow: Shadow? = null,
+    onTextLayout: ((MeasuredText) -> Unit)? = null,
+) {
+    val stack = remember(font) { HbFontStack(font) }
+    ShapedText(
+        text = text,
+        fontStack = stack,
+        sizePx = sizePx,
+        modifier = modifier,
+        color = color,
+        brush = brush,
+        features = features,
+        direction = direction,
+        overflow = overflow,
+        alignment = alignment,
+        justification = justification,
+        forceForegroundColor = forceForegroundColor,
+        style = style,
+        shadow = shadow,
+        onTextLayout = onTextLayout,
+    )
+}
+
+/**
+ * Multi-font [ShapedText] taking [StyledText]. Routes shaping
+ * through [fontStack] (so any cluster the primary font cannot
+ * resolve falls back to the configured fallbacks in order); per-
+ * character paint comes from [text]'s spans.
+ */
+@Composable
+public fun ShapedText(
+    text: StyledText,
+    fontStack: HbFontStack,
+    sizePx: Float,
+    modifier: Modifier = Modifier,
+    color: Color = Color.Unspecified,
+    brush: Brush? = null,
+    features: List<HbFeature> = emptyList(),
+    direction: HbDirection = HbDirection.AUTO,
+    overflow: ShapedTextOverflow = ShapedTextOverflow.Clip,
+    alignment: ParagraphAlignment = ParagraphAlignment.Start,
+    justification: JustificationStrategy = JustificationStrategy.None,
+    forceForegroundColor: Boolean = false,
+    style: DrawStyle = Fill,
+    shadow: Shadow? = null,
+    onTextLayout: ((MeasuredText) -> Unit)? = null,
+) {
+    val justifyOn = alignment == ParagraphAlignment.Justify &&
+        justification != JustificationStrategy.None
+
+    if (justifyOn) {
+        BoxWithConstraints(modifier = modifier) {
+            val maxWidthPx = if (constraints.hasBoundedWidth)
+                constraints.maxWidth.toFloat() else Float.POSITIVE_INFINITY
+            ShapedTextStyledBody(
+                text = text,
+                fontStack = fontStack,
+                sizePx = sizePx,
+                modifier = Modifier,
+                color = color,
+                brush = brush,
+                features = features,
+                direction = direction,
+                overflow = overflow,
+                alignment = alignment,
+                justification = justification,
+                justifyMaxWidth = maxWidthPx,
+                forceForegroundColor = forceForegroundColor,
+                style = style,
+                shadow = shadow,
+                onTextLayout = onTextLayout,
+            )
+        }
+    } else {
+        ShapedTextStyledBody(
+            text = text,
+            fontStack = fontStack,
+            sizePx = sizePx,
+            modifier = modifier,
+            color = color,
+            brush = brush,
+            features = features,
+            direction = direction,
+            overflow = overflow,
+            alignment = alignment,
+            justification = justification,
+            justifyMaxWidth = Float.POSITIVE_INFINITY,
+            forceForegroundColor = forceForegroundColor,
+            style = style,
+            shadow = shadow,
+            onTextLayout = onTextLayout,
+        )
+    }
+}
+
+@Composable
+private fun ShapedTextStyledBody(
+    text: StyledText,
+    fontStack: HbFontStack,
+    sizePx: Float,
+    modifier: Modifier,
+    color: Color,
+    brush: Brush?,
+    features: List<HbFeature>,
+    direction: HbDirection,
+    overflow: ShapedTextOverflow,
+    alignment: ParagraphAlignment,
+    justification: JustificationStrategy,
+    justifyMaxWidth: Float,
+    forceForegroundColor: Boolean,
+    style: DrawStyle,
+    shadow: Shadow?,
+    onTextLayout: ((MeasuredText) -> Unit)?,
+) {
+    val loadState by rememberMeasuredText(
+        text = text.text,
+        fontStack = fontStack,
+        sizePx = sizePx,
+        features = features,
+        direction = direction,
+        maxWidth = justifyMaxWidth,
+        justification = justification,
+    )
+    val resolvedColor = color.takeOrElse { Color.Black }
+    val measured: MeasuredText? = (loadState as? MeasuredTextLoad.Ready)?.measured
+
+    LaunchedEffect(measured) {
+        if (measured != null) onTextLayout?.invoke(measured)
+    }
+
+    val slotWidth = remember { mutableFloatStateOf(0f) }
+
+    Box(
+        modifier = modifier
+            .layout { measurable, constraints ->
+                if (measured == null || measured.isEmpty) {
+                    val placeable = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+                    slotWidth.floatValue = 0f
+                    return@layout layout(0, 0) { placeable.place(0, 0) }
+                }
+                val advancePx = ceil(measured.advance).toInt().coerceAtLeast(0)
+                val naturalExtentPx = ceil(maxOf(measured.advance, measured.ink.right))
+                    .toInt().coerceAtLeast(0)
+                val width = when {
+                    overflow == ShapedTextOverflow.Visible ->
+                        minOf(constraints.maxWidth, advancePx)
+                    overflow == ShapedTextOverflow.Compress &&
+                        constraints.hasBoundedWidth &&
+                        naturalExtentPx > constraints.maxWidth ->
+                        constraints.maxWidth
+                    constraints.hasBoundedWidth && alignment != ParagraphAlignment.Start ->
+                        constraints.maxWidth
+                    else -> minOf(constraints.maxWidth, advancePx)
+                }
+                val height = ceil(measured.lineHeight).toInt().coerceAtLeast(0)
+                slotWidth.floatValue = width.toFloat()
+                val placeable = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+                layout(width, height) { placeable.place(0, 0) }
+            }
+            .drawBehind {
+                if (measured != null) {
+                    drawShapedText(
+                        measured = measured,
+                        styledText = text,
+                        color = resolvedColor,
+                        brush = brush,
+                        style = style,
+                        forceForegroundColor = forceForegroundColor,
+                        shadow = shadow,
+                    )
+                }
+            },
+        content = {},
+    )
+}
+
 @Composable
 private fun ShapedTextBody(
     text: String,
