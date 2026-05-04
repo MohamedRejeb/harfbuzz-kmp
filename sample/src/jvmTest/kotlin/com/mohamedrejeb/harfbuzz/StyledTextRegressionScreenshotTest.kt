@@ -15,9 +15,8 @@ import org.junit.Test
 
 /**
  * Regression coverage: rendering with [StyledText] of empty spans
- * must be byte-identical to the existing String overload, for both
- * single-line ([ShapedText]) and the paragraph counterpart (covered
- * by a sibling test elsewhere in this module).
+ * must be byte-identical to the existing String overload of
+ * [ShapedText].
  */
 class StyledTextRegressionScreenshotTest {
 
@@ -35,7 +34,8 @@ class StyledTextRegressionScreenshotTest {
         val bytes = readFontBytes(path)
         val face = HbFace.from { bytes(bytes) }
         val font = face.toFont()
-        openFonts.add(font); openFonts.add(face)
+        openFonts.add(font)
+        openFonts.add(face)
         SizedFont(font, sizePx)
     }
 
