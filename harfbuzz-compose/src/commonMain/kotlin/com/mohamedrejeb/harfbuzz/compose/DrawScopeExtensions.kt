@@ -125,6 +125,66 @@ public fun DrawScope.drawShapedText(
 }
 
 /**
+ * Styled-text variant of [drawShapedText]. Each glyph in [measured]
+ * resolves to a paint via the cluster-position heuristic over
+ * [styledText]'s spans; monochrome glyphs are bucketed by resolved
+ * paint and filled one combined silhouette path per bucket. Color
+ * glyphs (COLR v0 / v1, SVG-in-OT) keep their authored colors except
+ * for COLR v0 foreground-color layers, which take the resolved paint
+ * (or, if [forceForegroundColor] is `true`, the silhouette also
+ * paints with the resolved paint).
+ *
+ * The chars in [styledText].text MUST equal the source string that
+ * produced [measured]; cluster ids would otherwise not line up with
+ * span ranges. Composables construct both from one source string and
+ * never break this invariant.
+ *
+ * When [styledText].spans is empty this delegates to the existing
+ * uniform-paint draw path so the no-spans output is byte-identical
+ * to calling the [String]-text overload.
+ */
+public fun DrawScope.drawShapedText(
+    measured: MeasuredText,
+    styledText: StyledText,
+    topLeft: Offset = Offset.Zero,
+    color: Color = Color.Black,
+    brush: Brush? = null,
+    alpha: Float = 1f,
+    style: DrawStyle = Fill,
+    blendMode: BlendMode = DrawScope.DefaultBlendMode,
+    forceForegroundColor: Boolean = false,
+    shadow: Shadow? = null,
+) {
+    if (styledText.spans.isEmpty()) {
+        drawShapedTextInternal(
+            measured = measured,
+            topLeft = topLeft,
+            color = color,
+            brush = brush,
+            alpha = alpha,
+            style = style,
+            blendMode = blendMode,
+            forceForegroundColor = forceForegroundColor,
+            shadow = shadow,
+            spacingScale = 1f,
+        )
+        return
+    }
+    drawShapedTextStyledInternal(
+        measured = measured,
+        styledText = styledText,
+        topLeft = topLeft,
+        color = color,
+        brush = brush,
+        alpha = alpha,
+        style = style,
+        blendMode = blendMode,
+        forceForegroundColor = forceForegroundColor,
+        shadow = shadow,
+    )
+}
+
+/**
  * Layout-aware overload: places [measured] within an [availableWidth]
  * slot and applies single-line [alignment] + [overflow]. The text is
  * assumed to be already justified (use [rememberMeasuredText] with a
