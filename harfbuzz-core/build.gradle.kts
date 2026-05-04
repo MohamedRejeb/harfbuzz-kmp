@@ -68,13 +68,24 @@ val configureNativeJvm by tasks.registering(Exec::class) {
     commandLine(args)
 }
 
+// CMake's Visual Studio generator (default on Windows) is multi-config and
+// drops build outputs into a per-config subdir like `Release/`. Unix
+// Makefiles (default on macOS/Linux) is single-config and writes straight
+// into the build root. Switch the source path so the same Copy wiring works
+// across both layouts.
+val cmakeBuiltLibSubpath = if (host.osArch.startsWith("windows-")) {
+    "Release/${host.libName}"
+} else {
+    host.libName
+}
+
 val buildNativeJvm by tasks.registering(Exec::class) {
     dependsOn(configureNativeJvm)
     val outDir = cmakeBuildDir.get().asFile
     inputs.file(nativeRoot.file("CMakeLists.txt"))
     inputs.file(nativeRoot.file("jni/harfbuzz_jni.cpp"))
     inputs.file(nativeRoot.file("jni/harfbuzz_jni.h"))
-    outputs.file(File(outDir, host.libName))
+    outputs.file(File(outDir, cmakeBuiltLibSubpath))
     commandLine(
         "cmake", "--build", outDir.absolutePath,
         "--target", "harfbuzz_jni",
@@ -85,7 +96,7 @@ val buildNativeJvm by tasks.registering(Exec::class) {
 
 val copyNativeJvm by tasks.registering(Copy::class) {
     dependsOn(buildNativeJvm)
-    from(cmakeBuildDir.map { it.file(host.libName) })
+    from(cmakeBuildDir.map { it.file(cmakeBuiltLibSubpath) })
     into(resourcesNativeDir)
 }
 
