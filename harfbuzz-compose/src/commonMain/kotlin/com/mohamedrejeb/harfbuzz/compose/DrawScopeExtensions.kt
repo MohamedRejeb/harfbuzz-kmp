@@ -649,7 +649,7 @@ internal fun DrawScope.drawCombinedBrushPath(
  * and Gaussian blur. [penX] / [penY] is the shadow's pen origin (already
  * offset by `shadow.offset`).
  */
-private fun DrawScope.drawShadowPass(
+internal fun DrawScope.drawShadowPass(
     measured: MeasuredText,
     penX: Float,
     penY: Float,
