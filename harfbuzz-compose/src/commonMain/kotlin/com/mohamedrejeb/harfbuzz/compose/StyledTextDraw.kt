@@ -13,8 +13,8 @@ import androidx.compose.ui.graphics.drawscope.DrawStyle
  * groups monochrome silhouettes by resolved paint so each distinct
  * paint becomes one combined-path fill at the end.
  *
- * Implemented progressively across plan tasks - this revision is the
- * skeleton; full per-glyph batching arrives next.
+ * Per-glyph batching is not yet implemented; this revision delegates
+ * to the uniform-paint path with the outer color/brush.
  */
 internal fun DrawScope.drawShapedTextStyledInternal(
     measured: MeasuredText,
@@ -28,8 +28,6 @@ internal fun DrawScope.drawShapedTextStyledInternal(
     forceForegroundColor: Boolean,
     shadow: Shadow?,
 ) {
-    // Skeleton: defer to the uniform-paint path. Replaced by the
-    // group-by-paint implementation in Task 9.
     drawShapedTextInternal(
         measured = measured,
         topLeft = topLeft,
