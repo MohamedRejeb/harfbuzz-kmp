@@ -22,13 +22,15 @@ internal fun clusterEndArray(
     textLength: Int,
 ): Map<Int, Int> {
     if (paragraph.isEmpty || textLength == 0) return emptyMap()
-    val distinct = sortedSetOf<Int>()
+    // HashSet + IntArray.sort() instead of sortedSetOf - the latter
+    // resolves to a TreeSet which is not available on Kotlin/Wasm.
+    val distinct = HashSet<Int>()
     for (run in paragraph.runs) {
         for (g in run.glyphs) distinct.add(g.cluster)
     }
     if (distinct.isEmpty()) return emptyMap()
-    val out = HashMap<Int, Int>(distinct.size)
-    val sorted = distinct.toIntArray()
+    val sorted = distinct.toIntArray().also { it.sort() }
+    val out = HashMap<Int, Int>(sorted.size)
     for (i in sorted.indices) {
         val cur = sorted[i]
         val end = if (i + 1 < sorted.size) sorted[i + 1] else textLength
@@ -61,7 +63,6 @@ internal class PaintResolver(
         // (defensive; should not happen for resolver output produced
         // from the same MeasuredText that supplied the index).
         val clusterEnd = clusterEnds[clusterStart] ?: (clusterStart + 1)
-        val codeUnitWidth = clusterEnd - clusterStart
 
         // Map glyphs to source codepoints with a single rule that
         // collapses to all three cases (1:1, multi-glyph base,
