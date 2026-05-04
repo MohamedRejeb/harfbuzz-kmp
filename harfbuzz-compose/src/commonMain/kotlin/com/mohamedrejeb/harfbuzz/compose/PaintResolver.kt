@@ -63,14 +63,35 @@ internal class PaintResolver(
         val clusterEnd = clusterEnds[clusterStart] ?: (clusterStart + 1)
         val codeUnitWidth = clusterEnd - clusterStart
 
-        val sourceIndex = if (codeUnitWidth == glyphsInCluster) {
-            // 1:1 case (Arabic base + N marks, decomposed sequences).
-            clusterStart + glyphIndexInCluster
-        } else {
-            // Mismatch (LAM-ALEF ligature, surrogate pair, ZWJ emoji,
-            // multi-mark stacks where M != N): inherit the leading
-            // code unit's style.
+        // Map glyphs to source codepoints with a single rule that
+        // collapses to all three cases (1:1, multi-glyph base,
+        // merged-mark ligature):
+        //
+        //  - The base glyph (lowest index in source order, i.e. the
+        //    last glyph in an RTL buffer) always maps to clusterStart.
+        //  - Higher-index glyphs - marks above / below the base, plus
+        //    extra body components some fonts emit - map to source
+        //    positions starting from clusterEnd and walking backward.
+        //
+        // 1:1 (Arabic base + N marks, codeUnitWidth == glyphsInCluster):
+        //   indexInCluster k maps to clusterStart + k.
+        //
+        // Multi-glyph base, codeUnitWidth < glyphsInCluster (BAA/NOON/FAA
+        // body + dot in Noto Naskh): the [extra] lowest indices all
+        // collapse onto clusterStart (body components of the leading
+        // codepoint), the rest pick up the marks in source order.
+        //
+        // Merged-mark ligature, codeUnitWidth > glyphsInCluster (TAA +
+        // SHADDA + KASRA shaped as [combined-mark, base], LAM-ALEF +
+        // FATHA): the single mark glyph picks up the trailing source
+        // codepoint, the base stays on clusterStart. Pure base ligatures
+        // (LAM-ALEF, "fi") have only the base glyph and still resolve
+        // to clusterStart (the leading codepoint's style), preserving
+        // the existing "ligature inherits leading style" behaviour.
+        val sourceIndex = if (glyphIndexInCluster == 0) {
             clusterStart
+        } else {
+            clusterEnd - (glyphsInCluster - glyphIndexInCluster)
         }
 
         var color = defaultColor

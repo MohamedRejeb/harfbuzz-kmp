@@ -158,24 +158,46 @@ internal fun DrawScope.drawShapedTextStyledInternal(
         penY = localY
     }
 
+    // Bases (default paint) form the bottom layer; per-span overrides
+    // paint on top. HarfBuzz emits cluster glyphs as mark-then-base in
+    // RTL buffer order, so iterating in insertion order paints marks
+    // first - any base whose path geometrically overlaps the mark
+    // (Arabic letters with deep descenders such as BAA / NOON colliding
+    // with a below-baseline KASRA) then overpaints the colored mark
+    // and hides it. Painting the default bucket first reverses that.
+    val defaultPaint = ResolvedPaint(color, brush)
+    pathBuckets[defaultPaint]?.let { defaultPath ->
+        drawResolvedBucket(defaultPaint, defaultPath, alpha, style, blendMode)
+    }
     for ((resolved, path) in pathBuckets) {
-        if (resolved.brush != null) {
-            drawCombinedBrushPath(
-                path = path,
-                brush = resolved.brush,
-                alpha = alpha,
-                style = style,
-                blendMode = blendMode,
-            )
-        } else {
-            drawPath(
-                path = path,
-                color = if (resolved.color == Color.Unspecified) Color.Black else resolved.color,
-                alpha = alpha,
-                style = style,
-                blendMode = blendMode,
-            )
-        }
+        if (resolved == defaultPaint) continue
+        drawResolvedBucket(resolved, path, alpha, style, blendMode)
+    }
+}
+
+private fun DrawScope.drawResolvedBucket(
+    resolved: ResolvedPaint,
+    path: androidx.compose.ui.graphics.Path,
+    alpha: Float,
+    style: DrawStyle,
+    blendMode: BlendMode,
+) {
+    if (resolved.brush != null) {
+        drawCombinedBrushPath(
+            path = path,
+            brush = resolved.brush,
+            alpha = alpha,
+            style = style,
+            blendMode = blendMode,
+        )
+    } else {
+        drawPath(
+            path = path,
+            color = if (resolved.color == Color.Unspecified) Color.Black else resolved.color,
+            alpha = alpha,
+            style = style,
+            blendMode = blendMode,
+        )
     }
 }
 
