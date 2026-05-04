@@ -36,3 +36,51 @@ internal fun clusterEndArray(
     }
     return out
 }
+
+/**
+ * Per-glyph paint resolver. Holds the styled-text spans, the cluster
+ * trailing-edge index from [clusterEndArray], and the default paint
+ * to fall back to. [resolve] is called once per glyph during the
+ * styled draw pass.
+ */
+internal class PaintResolver(
+    private val spans: List<StyleRange>,
+    private val clusterEnds: Map<Int, Int>,
+    private val defaultColor: Color,
+    private val defaultBrush: Brush?,
+) {
+    fun resolve(
+        clusterStart: Int,
+        glyphIndexInCluster: Int,
+        glyphsInCluster: Int,
+    ): ResolvedPaint {
+        // Cluster bounds: clusterEnds[clusterStart] is the next
+        // distinct cluster's start (or text.length for the last).
+        // Fallback to clusterStart + 1 keeps the heuristic well-
+        // defined for glyphs whose cluster id was never registered
+        // (defensive; should not happen for resolver output produced
+        // from the same MeasuredText that supplied the index).
+        val clusterEnd = clusterEnds[clusterStart] ?: (clusterStart + 1)
+        val codeUnitWidth = clusterEnd - clusterStart
+
+        val sourceIndex = if (codeUnitWidth == glyphsInCluster) {
+            // 1:1 case (Arabic base + N marks, decomposed sequences).
+            clusterStart + glyphIndexInCluster
+        } else {
+            // Mismatch (LAM-ALEF ligature, surrogate pair, ZWJ emoji,
+            // multi-mark stacks where M != N): inherit the leading
+            // code unit's style.
+            clusterStart
+        }
+
+        var color = defaultColor
+        var brush = defaultBrush
+        // Walk spans in declaration order; per-attribute later-wins.
+        for (s in spans) {
+            if (sourceIndex < s.start || sourceIndex >= s.end) continue
+            if (s.style.color != Color.Unspecified) color = s.style.color
+            if (s.style.brush != null) brush = s.style.brush
+        }
+        return ResolvedPaint(color, brush)
+    }
+}
