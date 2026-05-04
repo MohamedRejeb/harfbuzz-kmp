@@ -341,14 +341,11 @@ private fun ShapedTextStyledBody(
         if (measured != null) onTextLayout?.invoke(measured)
     }
 
-    val slotWidth = remember { mutableFloatStateOf(0f) }
-
     Box(
         modifier = modifier
             .layout { measurable, constraints ->
                 if (measured == null || measured.isEmpty) {
                     val placeable = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
-                    slotWidth.floatValue = 0f
                     return@layout layout(0, 0) { placeable.place(0, 0) }
                 }
                 val advancePx = ceil(measured.advance).toInt().coerceAtLeast(0)
@@ -366,7 +363,6 @@ private fun ShapedTextStyledBody(
                     else -> minOf(constraints.maxWidth, advancePx)
                 }
                 val height = ceil(measured.lineHeight).toInt().coerceAtLeast(0)
-                slotWidth.floatValue = width.toFloat()
                 val placeable = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
                 layout(width, height) { placeable.place(0, 0) }
             }
