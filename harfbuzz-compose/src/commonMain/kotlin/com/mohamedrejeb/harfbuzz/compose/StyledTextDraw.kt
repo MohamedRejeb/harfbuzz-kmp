@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.DrawStyle
 import androidx.compose.ui.graphics.drawscope.translate
+import com.mohamedrejeb.harfbuzz.core.HbDirection
 
 /**
  * Styled draw path. Resolves paint per glyph via [PaintResolver] and
@@ -67,19 +68,25 @@ internal fun DrawScope.drawShapedTextStyledInternal(
         val runFont = run.font ?: measured.font
         val caches = measured.runCachesFor(runFont, forceForegroundColor, style)
 
-        // Precompute per-glyph cluster size + position-in-cluster.
-        // Walked once per run; O(glyphCount).
+        // Precompute per-glyph cluster size + source-order index in cluster.
+        // For RTL runs HarfBuzz emits cluster glyphs in reverse source order
+        // (mark before base for an Arabic base+mark cluster), so the buffer
+        // index has to be flipped to recover the source-order position the
+        // 1:1 case in PaintResolver expects.
         val glyphsInCluster = IntArray(run.glyphs.size)
         val indexInCluster = IntArray(run.glyphs.size)
+        val isRtl = run.direction == HbDirection.RTL
         run {
             val counts = HashMap<Int, Int>(run.glyphs.size)
             for (g in run.glyphs) counts[g.cluster] = (counts[g.cluster] ?: 0) + 1
             val seen = HashMap<Int, Int>(counts.size)
             for (i in run.glyphs.indices) {
                 val cl = run.glyphs[i].cluster
-                glyphsInCluster[i] = counts.getValue(cl)
-                indexInCluster[i] = seen.getOrElse(cl) { 0 }
-                seen[cl] = indexInCluster[i] + 1
+                val total = counts.getValue(cl)
+                glyphsInCluster[i] = total
+                val bufferIndex = seen.getOrElse(cl) { 0 }
+                indexInCluster[i] = if (isRtl) total - 1 - bufferIndex else bufferIndex
+                seen[cl] = bufferIndex + 1
             }
         }
 
