@@ -115,6 +115,46 @@ ArcText(
 )
 ```
 
+## Quickstart - Styled spans (Arabic tashkeel coloring)
+
+Paint specific characters or character ranges with different colors or
+brushes inside a single `ShapedText` / `ShapedParagraphText`, without
+disturbing shaping. The shape pass runs once - per-glyph paint is
+resolved at draw time via a cluster-position heuristic so an Arabic
+base letter and its combining mark inside the same HarfBuzz cluster
+can each take a different color.
+
+```kotlin
+@Composable
+fun TashkeelSample() {
+    val state by rememberHbFont(
+        bytesProvider = { Res.readBytes("font/NotoNaskhArabic-Regular.ttf") },
+    )
+    val font = (state as? FontLoad.Ready)?.font ?: return
+
+    val styled = StyledText("بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ")
+        .withTashkeelColor(Color.Red)
+
+    ShapedText(
+        text = styled,
+        font = font,
+        sizePx = 36f,
+        color = Color.Black,    // default for un-spanned chars
+    )
+}
+```
+
+For more general styling (multi-color phrases, gradient-painted words,
+etc.) build a `StyledText` with the DSL:
+
+```kotlin
+val styled = buildStyledText {
+    append("Hello ", SpanStyle(color = Color.Red))
+    append("World", SpanStyle(brush = Brush.linearGradient(listOf(Color.Magenta, Color.Cyan))))
+}
+ShapedText(text = styled, font = font, sizePx = 32f, color = Color.Black)
+```
+
 ## Architecture
 
 `harfbuzz-compose` depends on `harfbuzz-core`. The core has zero Compose

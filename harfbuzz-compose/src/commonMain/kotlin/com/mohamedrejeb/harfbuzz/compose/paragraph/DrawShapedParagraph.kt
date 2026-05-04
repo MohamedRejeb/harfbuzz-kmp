@@ -14,9 +14,11 @@ import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import com.mohamedrejeb.harfbuzz.compose.StyledText
 import com.mohamedrejeb.harfbuzz.compose.drawCombinedBrushPath
 import com.mohamedrejeb.harfbuzz.compose.drawShapedText
 import com.mohamedrejeb.harfbuzz.compose.drawShapedTextInternal
+import com.mohamedrejeb.harfbuzz.compose.sliceLineSpans
 
 /**
  * Draw a previously-laid-out [paragraph] at [topLeft]. Walks every line in
@@ -162,6 +164,85 @@ public fun DrawScope.drawShapedParagraphWithImageFill(
             alpha = alpha,
             blendMode = blendMode,
             filterQuality = filterQuality,
+        )
+    }
+}
+
+/**
+ * Styled-paragraph variant of [drawShapedParagraph]. Walks every
+ * line, slices [styledText]'s spans to the line's char range
+ * (translating through any justification mapping the line carries),
+ * and delegates each line to the styled per-line `drawShapedText`.
+ *
+ * When [styledText].spans is empty this delegates straight to the
+ * uniform-paint paragraph draw so the output is byte-identical to
+ * the existing solid-colour overload.
+ */
+public fun DrawScope.drawShapedParagraph(
+    paragraph: MeasuredParagraph,
+    styledText: StyledText,
+    topLeft: Offset = Offset.Zero,
+    color: Color = Color.Black,
+    brush: Brush? = null,
+    alpha: Float = 1f,
+    style: DrawStyle = Fill,
+    blendMode: BlendMode = DrawScope.DefaultBlendMode,
+    forceForegroundColor: Boolean = false,
+    shadow: Shadow? = null,
+) {
+    if (paragraph.isEmpty) return
+    if (styledText.spans.isEmpty()) {
+        if (brush != null) {
+            drawShapedParagraph(
+                paragraph = paragraph,
+                brush = brush,
+                topLeft = topLeft,
+                alpha = alpha,
+                style = style,
+                blendMode = blendMode,
+                forceForegroundColor = forceForegroundColor,
+                shadow = shadow,
+            )
+        } else {
+            drawShapedParagraph(
+                paragraph = paragraph,
+                topLeft = topLeft,
+                color = color,
+                alpha = alpha,
+                style = style,
+                blendMode = blendMode,
+                forceForegroundColor = forceForegroundColor,
+                shadow = shadow,
+            )
+        }
+        return
+    }
+
+    for (line in paragraph.lines) {
+        if (line.measured.isEmpty) continue
+        val sliced = sliceLineSpans(
+            spans = styledText.spans,
+            lineStart = line.charRange.first,
+            lineEnd = line.charRange.last + 1,
+            originalToJustifiedIndex = line.originalToJustifiedIndex,
+            justifiedTextLength = line.measured.textLength,
+        )
+        val lineStyledText = StyledText(text = "", spans = sliced)
+        val lineTopLeft = Offset(
+            x = topLeft.x + line.xOffset,
+            y = topLeft.y + line.top,
+        )
+        drawShapedText(
+            measured = line.measured,
+            styledText = lineStyledText,
+            topLeft = lineTopLeft,
+            color = color,
+            brush = brush,
+            alpha = alpha,
+            style = style,
+            blendMode = blendMode,
+            forceForegroundColor = forceForegroundColor,
+            shadow = shadow,
         )
     }
 }
