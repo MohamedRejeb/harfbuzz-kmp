@@ -112,14 +112,22 @@ internal fun DrawScope.drawShapedTextStyledInternal(
                 (v0Layers != null && v0Layers.isNotEmpty())
 
             if (isColorGlyph) {
-                // Color glyph: paint per-glyph in place with the default paint.
+                // Color glyph - paint per-glyph in place. Foreground-color
+                // layers (COLR v0 foreground / forceForegroundColor) take the
+                // resolved per-glyph color. Per-span brushes are not applied
+                // to color glyphs; the resolved color is used instead, or the
+                // outer default if no color was set.
+                val foreground = when {
+                    resolved.color != Color.Unspecified -> resolved.color
+                    else -> color
+                }
                 translate(left = drawX, top = drawY) {
                     drawOneGlyphAtOrigin(
                         runFont = runFont,
                         sizePx = measured.sizePx,
                         caches = caches,
                         glyphId = gid,
-                        color = color,
+                        color = foreground,
                         alpha = alpha,
                         style = style,
                         blendMode = blendMode,
