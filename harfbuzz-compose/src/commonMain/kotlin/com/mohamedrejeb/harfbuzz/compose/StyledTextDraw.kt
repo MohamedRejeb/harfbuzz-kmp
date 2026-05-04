@@ -171,3 +171,41 @@ internal fun DrawScope.drawShapedTextStyledInternal(
         }
     }
 }
+
+/**
+ * Project paragraph-level [spans] onto a single line covering chars
+ * `[lineStart, lineEnd)` of the source text, returning ranges in
+ * line-local coordinates ready to feed into a per-line [PaintResolver].
+ *
+ * When [originalToJustifiedIndex] is non-null the line was widened
+ * by Kashida / thin-space insertion; line-local original indices
+ * are translated through the mapping so spans line up with the
+ * shaped clusters the per-line draw works against.
+ */
+internal fun sliceLineSpans(
+    spans: List<StyleRange>,
+    lineStart: Int,
+    lineEnd: Int,
+    originalToJustifiedIndex: IntArray?,
+    justifiedTextLength: Int,
+): List<StyleRange> {
+    if (spans.isEmpty()) return emptyList()
+    val out = ArrayList<StyleRange>(spans.size)
+    for (s in spans) {
+        if (s.end <= lineStart || s.start >= lineEnd) continue
+        val localStart = (maxOf(s.start, lineStart) - lineStart).coerceAtLeast(0)
+        val localEnd = (minOf(s.end, lineEnd) - lineStart).coerceAtLeast(localStart)
+        val (finalStart, finalEnd) = if (originalToJustifiedIndex == null) {
+            localStart to localEnd
+        } else {
+            val mapping = originalToJustifiedIndex
+            val fs = if (localStart >= mapping.size) justifiedTextLength else mapping[localStart]
+            val fe = if (localEnd >= mapping.size) justifiedTextLength else mapping[localEnd]
+            fs to fe
+        }
+        if (finalEnd >= finalStart) {
+            out.add(StyleRange(finalStart, finalEnd, s.style))
+        }
+    }
+    return out
+}
