@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.androidLibrary)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
+    alias(libs.plugins.mavenPublish)
 }
 
 kotlin {
@@ -146,6 +147,42 @@ tasks.withType<Test>().configureEach {
         systemProperty("runBenchmarks", "true")
         testLogging {
             showStandardStreams = true
+        }
+    }
+}
+
+mavenPublishing {
+    publishToMavenCentral()
+    signAllPublications()
+
+    coordinates(
+        groupId = project.group.toString(),
+        artifactId = "harfbuzz-compose",
+        version = project.version.toString(),
+    )
+
+    pom {
+        name.set("harfbuzz-compose")
+        description.set("Compose Multiplatform integration for kotlin-harfbuzz: ShapedText, MeasuredText, ArcText, drawShapedText, and rememberHbFont with COLR and SVG-in-OT color rendering.")
+        url.set("https://github.com/MohamedRejeb/harfbuzz-kmp")
+        licenses {
+            license {
+                name.set("The Apache Software License, Version 2.0")
+                url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
+                distribution.set("repo")
+            }
+        }
+        developers {
+            developer {
+                id.set("MohamedRejeb")
+                name.set("Mohamed Rejeb")
+                url.set("https://github.com/MohamedRejeb")
+            }
+        }
+        scm {
+            url.set("https://github.com/MohamedRejeb/harfbuzz-kmp")
+            connection.set("scm:git:git://github.com/MohamedRejeb/harfbuzz-kmp.git")
+            developerConnection.set("scm:git:ssh://git@github.com/MohamedRejeb/harfbuzz-kmp.git")
         }
     }
 }

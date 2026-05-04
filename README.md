@@ -37,14 +37,20 @@ This library exposes HarfBuzz directly to KMP/Compose so:
 
 ## Install
 
-> v0.1.0 publishing setup is wired but artifacts haven't been pushed to Maven
-> Central yet. Track [#1](#) for the first stable release.
+> Snapshots of `0.1.0-SNAPSHOT` are published to the Sonatype snapshots repo
+> on every push to `main`. A first stable `0.1.0` release will follow once
+> the API surface is locked.
 
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("com.mohamedrejeb:harfbuzz-core:0.1.0")
-    implementation("com.mohamedrejeb:harfbuzz-compose:0.1.0")
+    implementation("com.mohamedrejeb.harfbuzz:harfbuzz-core:0.1.0-SNAPSHOT")
+    implementation("com.mohamedrejeb.harfbuzz:harfbuzz-compose:0.1.0-SNAPSHOT")
+}
+
+repositories {
+    // for snapshots; remove once a stable release is published
+    maven("https://central.sonatype.com/repository/maven-snapshots/")
 }
 ```
 

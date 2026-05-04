@@ -5,6 +5,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidLibrary)
+    alias(libs.plugins.mavenPublish)
 }
 
 // ──── Desktop JVM native build ────────────────────────────────────────────
@@ -16,7 +17,13 @@ data class HostPlatform(val osArch: String, val libName: String)
 
 fun detectHost(): HostPlatform {
     val os = System.getProperty("os.name").lowercase()
-    val arch = System.getProperty("os.arch").lowercase()
+    val rawArch = System.getProperty("os.arch").lowercase()
+    // -PnativeArch=<aarch64|x86_64> forces a target arch override. Used by CI
+    // to cross-compile macOS x86_64 from an Apple Silicon runner so a single
+    // job can produce the Intel slice. Linux/Windows runners ignore this and
+    // build for whatever the runner arch happens to be.
+    val archOverride = (project.findProperty("nativeArch") as? String)?.lowercase()
+    val arch = archOverride ?: rawArch
     val osTag = when {
         os.contains("mac") || os.contains("darwin") -> "macos"
         os.contains("windows") -> "windows"
@@ -160,8 +167,16 @@ rootProject.tasks.matching { it.name == "kotlinWasmNpmInstall" }.configureEach {
 // is bundled in the final jvm jar at `native/<os-arch>/lib<name>.<ext>`.
 // writeNativeJvmSha transitively depends on copyNativeJvm, so requesting
 // it pulls the binary in too while also emitting the .sha256 sibling.
+//
+// -PskipNativeBuild bypasses the rebuild. CI's release/snapshot publish
+// jobs download prebuilt binaries from a per-OS matrix into the resources
+// tree, then publish without re-running CMake on the publish runner.
+val skipNativeBuild = project.hasProperty("skipNativeBuild")
+
 tasks.matching { it.name == "jvmProcessResources" }.configureEach {
-    dependsOn(writeNativeJvmSha)
+    if (!skipNativeBuild) {
+        dependsOn(writeNativeJvmSha)
+    }
 }
 
 // ──── iOS native build ────────────────────────────────────────────────────
@@ -433,6 +448,42 @@ tasks.withType<Test>().configureEach {
         // gradle log so callers don't have to dig into the test report.
         testLogging {
             showStandardStreams = true
+        }
+    }
+}
+
+mavenPublishing {
+    publishToMavenCentral()
+    signAllPublications()
+
+    coordinates(
+        groupId = project.group.toString(),
+        artifactId = "harfbuzz-core",
+        version = project.version.toString(),
+    )
+
+    pom {
+        name.set("harfbuzz-core")
+        description.set("Pure Kotlin Multiplatform bindings over HarfBuzz: headless shaping, font introspection, OpenType feature control, glyph metrics, and color paint trees.")
+        url.set("https://github.com/MohamedRejeb/harfbuzz-kmp")
+        licenses {
+            license {
+                name.set("The Apache Software License, Version 2.0")
+                url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
+                distribution.set("repo")
+            }
+        }
+        developers {
+            developer {
+                id.set("MohamedRejeb")
+                name.set("Mohamed Rejeb")
+                url.set("https://github.com/MohamedRejeb")
+            }
+        }
+        scm {
+            url.set("https://github.com/MohamedRejeb/harfbuzz-kmp")
+            connection.set("scm:git:git://github.com/MohamedRejeb/harfbuzz-kmp.git")
+            developerConnection.set("scm:git:ssh://git@github.com/MohamedRejeb/harfbuzz-kmp.git")
         }
     }
 }
