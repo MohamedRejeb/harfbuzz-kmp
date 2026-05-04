@@ -2,10 +2,10 @@ package com.mohamedrejeb.harfbuzz
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.text.font.FontWeight
-import harfbuzz_kmp.sample.generated.resources.NotoNaskhArabic_Bold
-import harfbuzz_kmp.sample.generated.resources.NotoNaskhArabic_Medium
-import harfbuzz_kmp.sample.generated.resources.NotoNaskhArabic_Regular
-import harfbuzz_kmp.sample.generated.resources.Res
+import com.mohamedrejeb.harfbuzz.sample.generated.resources.NotoNaskhArabic_Bold
+import com.mohamedrejeb.harfbuzz.sample.generated.resources.NotoNaskhArabic_Medium
+import com.mohamedrejeb.harfbuzz.sample.generated.resources.NotoNaskhArabic_Regular
+import com.mohamedrejeb.harfbuzz.sample.generated.resources.Res
 import org.jetbrains.compose.resources.ExperimentalResourceApi
 import org.jetbrains.compose.resources.preloadFont
 

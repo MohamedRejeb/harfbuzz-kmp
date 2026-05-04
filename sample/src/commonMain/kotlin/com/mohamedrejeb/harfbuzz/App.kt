@@ -83,13 +83,13 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import kotlin.math.ceil
-import harfbuzz_kmp.sample.generated.resources.NotoNaskhArabic_Bold
-import harfbuzz_kmp.sample.generated.resources.NotoNaskhArabic_Medium
-import harfbuzz_kmp.sample.generated.resources.NotoNaskhArabic_Regular
-import harfbuzz_kmp.sample.generated.resources.Res
-import harfbuzz_kmp.sample.generated.resources.Roboto_Bold
-import harfbuzz_kmp.sample.generated.resources.Roboto_Medium
-import harfbuzz_kmp.sample.generated.resources.Roboto_Regular
+import com.mohamedrejeb.harfbuzz.sample.generated.resources.NotoNaskhArabic_Bold
+import com.mohamedrejeb.harfbuzz.sample.generated.resources.NotoNaskhArabic_Medium
+import com.mohamedrejeb.harfbuzz.sample.generated.resources.NotoNaskhArabic_Regular
+import com.mohamedrejeb.harfbuzz.sample.generated.resources.Res
+import com.mohamedrejeb.harfbuzz.sample.generated.resources.Roboto_Bold
+import com.mohamedrejeb.harfbuzz.sample.generated.resources.Roboto_Medium
+import com.mohamedrejeb.harfbuzz.sample.generated.resources.Roboto_Regular
 import org.jetbrains.compose.resources.ExperimentalResourceApi
 
 /**
