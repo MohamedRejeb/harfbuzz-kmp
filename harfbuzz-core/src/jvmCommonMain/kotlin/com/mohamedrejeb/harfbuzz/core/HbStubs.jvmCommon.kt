@@ -75,19 +75,33 @@ public actual class HbFace internal constructor(
         }
     }
 
+    // Color-table presence is a property of the face's binary tables -
+    // it does not change once the face is loaded. Memoise the JNI probes
+    // so a per-frame `buildMeasuredText` does not pay native calls per
+    // font on every shape.
+    private val cachedHasColorLayers: Boolean by lazy {
+        HarfbuzzNative.faceHasColorLayers(ptr) != 0
+    }
+    private val cachedHasColorPaint: Boolean by lazy {
+        HarfbuzzNative.faceHasColorPaint(ptr) != 0
+    }
+    private val cachedHasColorSvg: Boolean by lazy {
+        HarfbuzzNative.faceHasColorSvg(ptr) != 0
+    }
+
     public actual fun hasColorLayers(): Boolean {
         check(!closed) { "hb object disposed" }
-        return HarfbuzzNative.faceHasColorLayers(ptr) != 0
+        return cachedHasColorLayers
     }
 
     public actual fun hasColorPaint(): Boolean {
         check(!closed) { "hb object disposed" }
-        return HarfbuzzNative.faceHasColorPaint(ptr) != 0
+        return cachedHasColorPaint
     }
 
     public actual fun hasColorSvg(): Boolean {
         check(!closed) { "hb object disposed" }
-        return HarfbuzzNative.faceHasColorSvg(ptr) != 0
+        return cachedHasColorSvg
     }
 
     public actual suspend fun toFont(): HbFont = withContext(harfbuzzDispatcher) {

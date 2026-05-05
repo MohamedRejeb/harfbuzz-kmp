@@ -5,6 +5,7 @@ import com.mohamedrejeb.harfbuzz.core.HbFeature
 import com.mohamedrejeb.harfbuzz.core.HbFont
 import com.mohamedrejeb.harfbuzz.core.HbFontStack
 import com.mohamedrejeb.harfbuzz.core.HbLanguage
+import kotlin.math.round
 
 /**
  * Process-wide LRU cache of fully-built [MeasuredText] values, keyed on
@@ -73,6 +74,26 @@ internal fun clearMeasuredTextCacheForTest() {
 }
 
 /**
+ * Bucket width for the cache-key `sizePx`. A 60 Hz Slider on font size
+ * emits 60 distinct floats per second, which without bucketing would
+ * miss the cache on every tick and immediately churn the LRU. Rounding
+ * to the nearest [SIZE_PX_BUCKET_PX] collapses near-duplicate requests
+ * to a single entry; the perceived size difference is sub-pixel and
+ * invisible above ~12 px text.
+ *
+ * The corresponding helper [quantizeSizePxForCache] is also used by
+ * [buildMeasuredText] to shape at the bucket-aligned size, so the
+ * returned [MeasuredText.sizePx] reflects the bucket and behaviour is
+ * deterministic regardless of the order in which slider values arrive.
+ */
+internal const val SIZE_PX_BUCKET_PX: Float = 0.5f
+
+internal fun quantizeSizePxForCache(sizePx: Float): Float {
+    if (!sizePx.isFinite() || sizePx <= 0f) return sizePx
+    return round(sizePx / SIZE_PX_BUCKET_PX) * SIZE_PX_BUCKET_PX
+}
+
+/**
  * Layout-affecting key for [MeasuredTextCache]. Distinct from the
  * draw-time inputs (color/alpha/shadow/blend) which never feed the key
  * - that's the whole point.
@@ -110,7 +131,7 @@ internal fun measureKeyOf(
 ): MeasureKey = MeasureKey(
     text = text,
     fonts = fontStack.fonts,
-    sizePx = sizePx,
+    sizePx = quantizeSizePxForCache(sizePx),
     features = features,
     direction = direction,
     language = language,

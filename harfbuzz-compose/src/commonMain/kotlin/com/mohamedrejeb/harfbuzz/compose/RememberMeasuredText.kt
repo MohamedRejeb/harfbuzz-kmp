@@ -191,13 +191,22 @@ public suspend fun buildMeasuredText(
     direction: HbDirection,
     language: HbLanguage,
 ): MeasuredText {
+    // Bucket the requested size to [SIZE_PX_BUCKET_PX] before keying the
+    // cache and before passing it down to the shaper. Slider scrubs that
+    // emit dozens of distinct floats per second collapse to a handful of
+    // entries instead of churning the LRU; the resulting [MeasuredText]
+    // reports the bucketed size in [MeasuredText.sizePx], so behaviour
+    // is deterministic regardless of which slider value arrived first
+    // in a bucket. The visual difference between requested and bucketed
+    // size is sub-pixel and invisible above small body text.
+    val bucketedSizePx = quantizeSizePxForCache(sizePx)
     // Fast path: cache hit on identical layout-affecting inputs. The key
     // intentionally excludes paint-only props (color, alpha, shadow) so
     // animating them never invalidates the entry. See [MeasuredTextCache]
     // for the workloads this catches.
-    val cacheKey = measureKeyOf(text, fontStack, sizePx, features, direction, language)
+    val cacheKey = measureKeyOf(text, fontStack, bucketedSizePx, features, direction, language)
     MeasuredTextCache.get(cacheKey)?.let { return it }
-    val measured = buildMeasuredTextUncached(text, fontStack, sizePx, features, direction, language)
+    val measured = buildMeasuredTextUncached(text, fontStack, bucketedSizePx, features, direction, language)
     // Empty-text builds skip the cache: there's nothing to amortise and an
     // empty entry per (fontStack, features, ...) tuple would just pollute
     // the working set.
