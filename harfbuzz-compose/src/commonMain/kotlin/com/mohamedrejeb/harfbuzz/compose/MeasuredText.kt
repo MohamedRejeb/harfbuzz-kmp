@@ -294,6 +294,48 @@ public class MeasuredText internal constructor(
      */
     public val silhouettePath: Path by lazy { buildSilhouettePath() }
 
+    /**
+     * Flat-baseline glyph union path: every glyph in the line combined
+     * into one [Path] with pen origin `(0, 0)` and baseline at `y = 0`.
+     * Built lazily once and reused across draws because it is
+     * paint-invariant and geometry-agnostic.
+     *
+     * The library's warp drawers ([drawWarpedTextAlongPath],
+     * [drawArcText]) read this property instead of rebuilding the
+     * baseline path every frame. External pipelines that implement
+     * their own warp drawer should do the same: read
+     * `measured.baselineGlyphPath`, then sample / warp from there.
+     *
+     * Differs from [silhouettePath] only in pen origin: silhouette is
+     * positioned at `(0, baseline)` to match a `topLeft = Offset.Zero`
+     * draw call; baseline glyph path is positioned at `(0, 0)` to give
+     * warp drawers a path whose `y = 0` coincides with the glyph
+     * baseline.
+     */
+    public val baselineGlyphPath: Path by lazy { buildBaselineGlyphPath(this) }
+
+    /**
+     * Sampled contour points of [baselineGlyphPath] at [sampleStep] px
+     * intervals, one [FloatArray] per sub-contour, layout
+     * `[x0, y0, x1, y1, ...]`. Memoised at the most-recently-requested
+     * step so repeated calls with the same `sampleStep` (the typical
+     * case for a per-frame warp drawer) hit the cache.
+     *
+     * Caller-visible only through library drawers today; expose
+     * publicly only if external warp pipelines need raw samples.
+     */
+    internal fun contourSamples(sampleStep: Float): List<FloatArray> {
+        val cached = cachedContourSamples
+        if (cached != null && cachedContourSampleStep == sampleStep) return cached
+        val fresh = samplePathContours(baselineGlyphPath, sampleStep)
+        cachedContourSamples = fresh
+        cachedContourSampleStep = sampleStep
+        return fresh
+    }
+
+    private var cachedContourSampleStep: Float = Float.NaN
+    private var cachedContourSamples: List<FloatArray>? = null
+
     private fun buildSilhouettePath(): Path {
         val out = Path()
         if (paragraph.isEmpty) return out

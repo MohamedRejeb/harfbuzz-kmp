@@ -105,8 +105,7 @@ public fun DrawScope.drawWarpedTextAlongPath(
     val pathLength = pathMeasure.length
     if (pathLength <= 0f) return
 
-    val baseline = buildBaselineGlyphPath(measured)
-    val contours = samplePathContours(baseline, sampleStep)
+    val contours = measured.contourSamples(sampleStep)
     if (contours.isEmpty()) return
 
     val totalAdvance = measured.paragraph.totalAdvance
@@ -229,6 +228,11 @@ public fun DrawScope.drawWarpedTextAlongPath(
  * a layout snapshot and reuses it across frames). Library-supplied
  * drawers built on top of this primitive: [drawWarpedTextAlongPath]
  * (generic path) and [drawArcText] (analytical circular arc).
+ *
+ * For repeated reads of the same [MeasuredText], prefer the cached
+ * [MeasuredText.baselineGlyphPath] property over calling this function
+ * - the property memoises the build internally and is identity-stable
+ * across the `MeasuredText`'s lifetime.
  *
  * Glyphs whose outlines are missing (typically because the font has a
  * color paint tree but no monochrome silhouette) still advance the pen

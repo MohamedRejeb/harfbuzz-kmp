@@ -113,8 +113,7 @@ public fun DrawScope.drawArcText(
     val pathLength = abs(sweepAngleRad) * radiusPx
     if (pathLength <= 0f) return
 
-    val baseline = buildBaselineGlyphPath(measured)
-    val contours = samplePathContours(baseline, sampleStep)
+    val contours = measured.contourSamples(sampleStep)
     if (contours.isEmpty()) return
 
     val totalAdvance = measured.paragraph.totalAdvance
