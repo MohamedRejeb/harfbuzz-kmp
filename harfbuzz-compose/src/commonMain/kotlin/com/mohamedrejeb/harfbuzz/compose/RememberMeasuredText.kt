@@ -16,6 +16,7 @@ import com.mohamedrejeb.harfbuzz.core.MeasuredFontPass
 import com.mohamedrejeb.harfbuzz.core.RecordedPaintOp
 import com.mohamedrejeb.harfbuzz.core.buildMeasured
 import com.mohamedrejeb.harfbuzz.core.defaultFlagsFor
+import com.mohamedrejeb.harfbuzz.core.paragraph.AdvanceStretchJustifier
 import com.mohamedrejeb.harfbuzz.core.paragraph.ArabicTextUtils
 import com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy
 import com.mohamedrejeb.harfbuzz.core.paragraph.LineJustifier
@@ -116,7 +117,7 @@ public fun rememberMeasuredText(
  * `targetWidthPx` overrides it so callers can keep `maxWidth` infinite
  * (no wrap) while still driving Kashida insertion.
  */
-internal suspend fun buildMeasuredTextWithJustify(
+public suspend fun buildMeasuredTextWithJustify(
     text: String,
     fontStack: HbFontStack,
     sizePx: Float,
@@ -129,6 +130,7 @@ internal suspend fun buildMeasuredTextWithJustify(
     val initial = buildMeasuredText(text, fontStack, sizePx, features, direction, language)
     val targetWidth = when (justification) {
         is JustificationStrategy.KashidaTo -> justification.targetWidthPx
+        is JustificationStrategy.AdvanceStretchTo -> justification.targetWidthPx
         else -> maxWidth
     }
     if (
@@ -138,6 +140,12 @@ internal suspend fun buildMeasuredTextWithJustify(
         targetWidth <= 0f ||
         initial.advance >= targetWidth
     ) return initial
+
+    if (justification is JustificationStrategy.AdvanceStretchTo) {
+        val stretched = AdvanceStretchJustifier.stretch(initial.paragraph, targetWidth)
+        return if (stretched === initial.paragraph) initial
+        else initial.withStretchedParagraph(stretched)
+    }
 
     val needsKashidaWidth = justification == JustificationStrategy.Mixed ||
         justification is JustificationStrategy.KashidaTo
@@ -169,7 +177,7 @@ internal suspend fun buildMeasuredTextWithJustify(
 private fun isStaleHbHandle(cause: Throwable): Boolean =
     cause is IllegalStateException && cause.message == "hb object disposed"
 
-internal suspend fun buildMeasuredText(
+public suspend fun buildMeasuredText(
     text: String,
     fontStack: HbFontStack,
     sizePx: Float,

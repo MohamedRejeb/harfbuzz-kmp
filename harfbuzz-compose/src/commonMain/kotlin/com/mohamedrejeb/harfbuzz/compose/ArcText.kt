@@ -24,10 +24,17 @@ import com.mohamedrejeb.harfbuzz.core.HbFontStack
  * circular path and maps the arc-flavoured enums to their
  * path-text equivalents.
  *
- * Note (vs. the pre-rewrite version): `ArcSweep.Fixed(degrees)` -
- * stretching glyphs across an exact arc length - is no longer
- * supported; that feature returns with the justification spec.
- * `ArcSweep.Auto` was the prior default and is now implicit.
+ * [overflow] controls what happens when the shaped text doesn't
+ * match the circle's circumference. The default [TextOnPathOverflow.Clip]
+ * drops glyphs whose midpoint lies outside the path. Pass
+ * [TextOnPathOverflow.Compress] to shrink per-glyph spacing so an
+ * over-long line fits exactly. To stretch a short line into the
+ * full ring, justify it via
+ * [com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy.KashidaTo]
+ * (Arabic) or
+ * [com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy.AdvanceStretchTo]
+ * (Latin / mixed) before handing the [MeasuredText] to the
+ * `(measured, ...)` overload.
  */
 @Composable
 public fun ArcText(
@@ -41,6 +48,7 @@ public fun ArcText(
     side: ArcSide = ArcSide.Outside,
     color: Color = Color.Black,
     alignment: ArcAlignment = ArcAlignment.Start,
+    overflow: TextOnPathOverflow = TextOnPathOverflow.Clip,
     features: List<HbFeature> = emptyList(),
     style: DrawStyle = Fill,
     shadow: Shadow? = null,
@@ -69,7 +77,7 @@ public fun ArcText(
                     ArcAlignment.Center -> TextOnPathAlignment.Center
                     ArcAlignment.End -> TextOnPathAlignment.End
                 },
-                overflow = TextOnPathOverflow.Clip,
+                overflow = overflow,
                 autoFlip = false,
                 shadow = shadow,
             )
@@ -90,6 +98,7 @@ public fun ArcText(
     side: ArcSide = ArcSide.Outside,
     color: Color = Color.Black,
     alignment: ArcAlignment = ArcAlignment.Start,
+    overflow: TextOnPathOverflow = TextOnPathOverflow.Clip,
     features: List<HbFeature> = emptyList(),
     style: DrawStyle = Fill,
     shadow: Shadow? = null,
@@ -118,7 +127,7 @@ public fun ArcText(
                     ArcAlignment.Center -> TextOnPathAlignment.Center
                     ArcAlignment.End -> TextOnPathAlignment.End
                 },
-                overflow = TextOnPathOverflow.Clip,
+                overflow = overflow,
                 autoFlip = false,
                 shadow = shadow,
             )
@@ -133,10 +142,13 @@ public fun ArcText(
  * `(text, fontStack, ...)` overloads, but skips the internal
  * [rememberMeasuredText] call so callers can pre-justify the run.
  *
- * The intended use case is arc Kashida: shape `text` with
+ * The intended use case is arc Kashida (Arabic) or arc advance-stretch
+ * (Latin / mixed): shape `text` with
  * [com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy.KashidaTo]
+ * or
+ * [com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy.AdvanceStretchTo]
  * targeting the arc length, then hand the resulting [MeasuredText]
- * straight to this overload. The text is drawn whatever advance the
+ * straight to this overload. The text is drawn at whatever advance the
  * justified shape produced; widening the input is the caller's job.
  */
 @Composable
@@ -149,6 +161,7 @@ public fun ArcText(
     side: ArcSide = ArcSide.Outside,
     color: Color = Color.Black,
     alignment: ArcAlignment = ArcAlignment.Start,
+    overflow: TextOnPathOverflow = TextOnPathOverflow.Clip,
     style: DrawStyle = Fill,
     shadow: Shadow? = null,
 ) {
@@ -173,7 +186,7 @@ public fun ArcText(
                     ArcAlignment.Center -> TextOnPathAlignment.Center
                     ArcAlignment.End -> TextOnPathAlignment.End
                 },
-                overflow = TextOnPathOverflow.Clip,
+                overflow = overflow,
                 autoFlip = false,
                 shadow = shadow,
             )

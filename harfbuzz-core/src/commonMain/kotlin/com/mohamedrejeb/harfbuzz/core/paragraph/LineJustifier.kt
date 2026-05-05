@@ -31,6 +31,11 @@ public class LineJustificationResult internal constructor(
  * (target below current, zero glyph widths, empty insertion sets) so
  * the caller can safely re-shape only when [LineJustificationResult.justifiedText]
  * differs from the input.
+ *
+ * [JustificationStrategy.AdvanceStretchTo] is also returned as
+ * identity here because it operates post-shape on glyph advances
+ * rather than text. Callers that want it must run
+ * [AdvanceStretchJustifier] against the already-shaped paragraph.
  */
 public object LineJustifier {
 
@@ -56,7 +61,8 @@ public object LineJustifier {
         kashidaGlyphWidth: Float,
         thinSpaceWidth: Float,
     ): LineJustificationResult = when (strategy) {
-        JustificationStrategy.None -> identityResult(text)
+        JustificationStrategy.None,
+        is JustificationStrategy.AdvanceStretchTo -> identityResult(text)
         JustificationStrategy.WordSpacing -> {
             val r = WordSpacingJustifier.justifyLine(
                 text = text,

@@ -107,7 +107,7 @@ public fun rememberMeasuredParagraph(
 private fun isStaleHbHandle(cause: Throwable): Boolean =
     cause is IllegalStateException && cause.message == "hb object disposed"
 
-internal suspend fun buildMeasuredParagraph(
+public suspend fun buildMeasuredParagraph(
     text: String,
     fontStack: HbFontStack,
     sizePx: Float,

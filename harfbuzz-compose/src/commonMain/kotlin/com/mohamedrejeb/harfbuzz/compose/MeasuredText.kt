@@ -471,3 +471,46 @@ internal fun MeasuredText.withOriginalMapping(
     originalToJustifiedIndex = mapping,
     shapedTextLength = textLength,
 )
+
+/**
+ * Replace [this]'s paragraph with [stretched] (typically the output of
+ * [com.mohamedrejeb.harfbuzz.core.paragraph.AdvanceStretchJustifier.stretch])
+ * and rebuild the cached measurements. Glyph caches are reused by
+ * reference because per-glyph outlines and color layers are advance-
+ * agnostic; only the paragraph's per-glyph spacing and `totalAdvance`
+ * change.
+ */
+internal fun MeasuredText.withStretchedParagraph(
+    stretched: ShapedParagraph,
+): MeasuredText {
+    val newAdvance = stretched.totalAdvance
+    val newLogical = Rect(
+        left = 0f,
+        top = -ascent,
+        right = newAdvance,
+        bottom = descent + lineGap,
+    )
+    return MeasuredText(
+        paragraph = stretched,
+        fontStack = fontStack,
+        sizePx = sizePx,
+        ink = ink,
+        logical = newLogical,
+        baseline = baseline,
+        advance = newAdvance,
+        ascent = ascent,
+        descent = descent,
+        lineGap = lineGap,
+        textLength = textLength,
+        flippedPathsByFont = flippedPathsByFont,
+        rawPathsByFont = rawPathsByFont,
+        colorLayersByFont = colorLayersByFont,
+        paintTreesByFont = paintTreesByFont,
+        svgGlyphCachesByFont = svgGlyphCachesByFont,
+        hasColorGlyphs = hasColorGlyphs,
+        hasColorPaintTree = hasColorPaintTree,
+        hasColorSvg = hasColorSvg,
+        originalToJustifiedIndex = originalToJustifiedIndex,
+        shapedTextLength = shapedTextLength,
+    )
+}
