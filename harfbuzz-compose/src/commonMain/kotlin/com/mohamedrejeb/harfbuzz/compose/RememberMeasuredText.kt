@@ -329,8 +329,20 @@ private suspend fun parseFontPass(
     val font = pass.font
     val pathScale = font.pathScale
 
-    val flippedPaths = LazyGlyphPathMap(pass.flippedPathSvg, flipY = true, scale = pathScale)
-    val rawPaths = LazyGlyphPathMap(pass.rawPathSvg, flipY = false, scale = pathScale)
+    val flippedPaths = LazyGlyphPathMap(
+        rawSvgs = pass.flippedPathSvg,
+        flipY = true,
+        scale = pathScale,
+        font = font,
+        sizePx = sizePx,
+    )
+    val rawPaths = LazyGlyphPathMap(
+        rawSvgs = pass.rawPathSvg,
+        flipY = false,
+        scale = pathScale,
+        font = font,
+        sizePx = sizePx,
+    )
     val paintTrees = LazyPaintTreeMap(pass.paintTreeBytes)
 
     // SVG-in-OT raster is the single most expensive per-glyph step

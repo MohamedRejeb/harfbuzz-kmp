@@ -1,6 +1,7 @@
 package com.mohamedrejeb.harfbuzz.compose
 
 import androidx.compose.ui.graphics.Path
+import com.mohamedrejeb.harfbuzz.core.HbFont
 import com.mohamedrejeb.harfbuzz.core.PaintBufferParser
 import com.mohamedrejeb.harfbuzz.core.RecordedPaintOp
 import com.mohamedrejeb.harfbuzz.core.RecordingPaintSink
@@ -14,7 +15,9 @@ import kotlin.coroutines.cancellation.CancellationException
  * actually draws: the practical win for color-emoji-heavy or CJK
  * paragraphs whose viewport only paints a fraction of the shaped
  * glyphs. Glyphs that *do* draw still get parsed exactly once and
- * memoised; subsequent frames hit the cache.
+ * memoised in the process-wide [GlyphPathCache] keyed on
+ * `(font, glyphId, sizePx, flipY)`, so two `MeasuredText` instances
+ * at the same `(font, sizePx)` reuse parsed paths.
  *
  * Behaves like a real `Map<Int, Path>` for the consumers that exist
  * today (`get`, `containsKey`, `size`, `keys`, `isEmpty`). Throws on
@@ -24,17 +27,17 @@ import kotlin.coroutines.cancellation.CancellationException
  * caller materialises.
  *
  * Threading: lookups happen on the UI thread per frame and are
- * serialised by Compose's draw scheduler. The internal `HashMap` is
- * not externally synchronised; concurrent draws on the same
+ * serialised by Compose's draw scheduler. [GlyphPathCache] is not
+ * externally synchronised; concurrent draws on the same
  * `MeasuredText` would be a Compose-runtime bug.
  */
 internal class LazyGlyphPathMap(
     private val rawSvgs: Map<Int, String>,
     private val flipY: Boolean,
     private val scale: Float,
+    private val font: HbFont,
+    private val sizePx: Float,
 ) : Map<Int, Path> {
-
-    private val parsed = HashMap<Int, Path>()
 
     override val size: Int get() = rawSvgs.size
     override fun isEmpty(): Boolean = rawSvgs.isEmpty()
@@ -42,10 +45,13 @@ internal class LazyGlyphPathMap(
     override val keys: Set<Int> get() = rawSvgs.keys
 
     override fun get(key: Int): Path? {
-        parsed[key]?.let { return it }
+        val cacheKey = GlyphPathCache.Key(
+            font = font, glyphId = key, sizePx = sizePx, flipY = flipY,
+        )
+        GlyphPathCache.get(cacheKey)?.let { return it }
         val svg = rawSvgs[key] ?: return null
         val path = parseSvgPathToCompose(svg, flipY = flipY, scale = scale)
-        parsed[key] = path
+        GlyphPathCache.put(cacheKey, path)
         return path
     }
 
