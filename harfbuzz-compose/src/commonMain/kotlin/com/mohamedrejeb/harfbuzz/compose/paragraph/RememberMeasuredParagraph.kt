@@ -21,9 +21,12 @@ import kotlin.coroutines.cancellation.CancellationException
  * the result + per-line [com.mohamedrejeb.harfbuzz.compose.MeasuredText]
  * caches into a [MeasuredParagraph] safe to retain across recompositions.
  *
- * Returns a [State] of [MeasuredParagraphLoad]. The build runs off-main,
- * so the initial value is [MeasuredParagraphLoad.Loading] until layout
- * completes.
+ * Returns a [State] of [MeasuredParagraphLoad]. The build runs off-main.
+ * The initial value is [MeasuredParagraphLoad.Loading] until the first
+ * layout completes; subsequent input changes keep the previous
+ * [MeasuredParagraphLoad.Ready] visible while the new layout runs
+ * (stale-while-revalidate), so animating size, maxWidth, features etc.
+ * does not blank the rendered paragraph between frames.
  */
 @Composable
 public fun rememberMeasuredParagraph(
@@ -76,7 +79,9 @@ public fun rememberMeasuredParagraph(
         initialValue = MeasuredParagraphLoad.Loading,
         text, fontStack, sizePx, maxWidth, alignment, direction, features, language, lineSpacing, justification,
     ) {
-        value = MeasuredParagraphLoad.Loading
+        // Deliberately do NOT reset to Loading here: keep the previous
+        // Ready value visible while the new layout runs so size /
+        // maxWidth / feature animation does not blank the paragraph.
         try {
             val measured = buildMeasuredParagraph(
                 text = text,

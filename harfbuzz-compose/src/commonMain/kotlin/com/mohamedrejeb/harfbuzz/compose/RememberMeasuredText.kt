@@ -32,8 +32,12 @@ import kotlin.coroutines.cancellation.CancellationException
  * [MeasuredText] safe to retain across recompositions.
  *
  * Returns a [State] of [MeasuredTextLoad]. The build runs off-main
- * (background dispatcher on JVM/Android/iOS, worker on Wasm), so the
- * initial value is [MeasuredTextLoad.Loading] until shaping completes.
+ * (background dispatcher on JVM/Android/iOS, worker on Wasm). The
+ * initial value is [MeasuredTextLoad.Loading] until the first shape
+ * completes; subsequent input changes keep the previous
+ * [MeasuredTextLoad.Ready] visible while the new build runs
+ * (stale-while-revalidate), so animating size, features, justification
+ * etc. does not blank the rendered text between frames.
  *
  * The paint-tree cache means [drawShapedText] never touches JNI per
  * frame: every redraw replays the recorded ops directly.
@@ -81,7 +85,9 @@ public fun rememberMeasuredText(
         initialValue = MeasuredTextLoad.Loading,
         text, fontStack, sizePx, features, direction, language, maxWidth, justification,
     ) {
-        value = MeasuredTextLoad.Loading
+        // Deliberately do NOT reset to Loading here: keep the previous
+        // Ready value visible while the new build runs so size /
+        // feature / justification animation does not blank the text.
         try {
             val measured = buildMeasuredTextWithJustify(
                 text, fontStack, sizePx, features, direction, language, maxWidth, justification,
