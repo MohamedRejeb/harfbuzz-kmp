@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.DrawStyle
@@ -509,6 +510,28 @@ internal fun DrawScope.drawShapedTextInternal(
     val penX = topLeft.x
     val penY = baselineY
 
+    // Stroke routes through a unified silhouette so cursive Arabic joins
+    // and overlapping marks render as a single outline. Stroking glyphs
+    // individually leaves stroke seams at every join (each glyph's
+    // contour gets its own stroke, so where two letters connect inside
+    // the silhouette the connecting edges stay visible).
+    if (style is Stroke) {
+        drawShapedTextStrokeInternal(
+            measured = measured,
+            penX = penX,
+            penY = penY,
+            color = color,
+            brush = brush,
+            alpha = alpha,
+            style = style,
+            blendMode = blendMode,
+            shadow = shadow,
+            spacingScale = spacingScale,
+            externalBrushPath = externalBrushPath,
+        )
+        return
+    }
+
     if (shadow != null) {
         drawShadowPass(
             measured = measured,
@@ -610,6 +633,158 @@ internal fun DrawScope.drawShapedTextInternal(
 }
 
 /**
+ * Stroke render path. Builds a unified silhouette of every glyph in the
+ * line (boolean Union of per-glyph paths) and strokes it once, so the
+ * stroke outlines the line's silhouette as a single contour. Per-glyph
+ * stroking would otherwise leave seams at every cursive join in Arabic
+ * scripts and around overlapping marks.
+ *
+ * When [externalBrushPath] is non-null the caller (paragraph-mode brush
+ * draw) owns a paragraph-wide accumulator and unifies + strokes once at
+ * the end via [drawCombinedBrushPath]; we just append our glyph paths.
+ */
+private fun DrawScope.drawShapedTextStrokeInternal(
+    measured: MeasuredText,
+    penX: Float,
+    penY: Float,
+    color: Color,
+    brush: Brush?,
+    alpha: Float,
+    style: DrawStyle,
+    blendMode: BlendMode,
+    shadow: Shadow?,
+    spacingScale: Float,
+    externalBrushPath: Path?,
+) {
+    if (externalBrushPath != null) {
+        accumulateLineSilhouette(
+            measured = measured,
+            penX = penX,
+            penY = penY,
+            spacingScale = spacingScale,
+            target = externalBrushPath,
+        )
+        return
+    }
+    val raw = Path()
+    accumulateLineSilhouette(
+        measured = measured,
+        penX = penX,
+        penY = penY,
+        spacingScale = spacingScale,
+        target = raw,
+    )
+    if (raw.isEmpty) return
+    val silhouette = raw.toUnifiedSilhouette()
+    if (shadow != null) {
+        drawShadowOnPath(
+            silhouette = silhouette,
+            shadow = shadow,
+            alpha = alpha,
+            style = style,
+            blendMode = blendMode,
+        )
+    }
+    if (brush != null) {
+        drawCombinedBrushPath(
+            path = silhouette,
+            brush = brush,
+            alpha = alpha,
+            style = style,
+            blendMode = blendMode,
+        )
+    } else {
+        drawPath(
+            path = silhouette,
+            color = color,
+            alpha = alpha,
+            style = style,
+            blendMode = blendMode,
+        )
+    }
+}
+
+/**
+ * Append every glyph's silhouette path in [measured] to [target],
+ * positioned at the line's pen origin and with the spacing scale
+ * applied. Glyphs without a silhouette (e.g. some COLR v1 emoji that
+ * paint via a cover rect) contribute nothing - they remain gaps.
+ */
+private fun accumulateLineSilhouette(
+    measured: MeasuredText,
+    penX: Float,
+    penY: Float,
+    spacingScale: Float,
+    target: Path,
+) {
+    var localPenX = penX
+    var localPenY = penY
+    for (run in measured.paragraph.runs) {
+        val runFont = run.font ?: measured.font
+        val flipped = measured.flippedPathsByFont[runFont] ?: emptyMap()
+        var localX = localPenX
+        var localY = localPenY
+        for (i in run.glyphs.indices) {
+            val gid = run.glyphs[i].glyphId
+            val pos = run.positions[i]
+            val drawX = localX + pos.xOffset
+            val drawY = localY - pos.yOffset
+            val p = flipped[gid]
+            if (p != null) target.addPath(p, Offset(drawX, drawY))
+            localX += pos.xAdvance * spacingScale
+            localY += pos.yAdvance
+        }
+        localPenX = localX
+        localPenY = localY
+    }
+}
+
+/**
+ * Return a Path with the same filled area as [this] but with a single
+ * non-self-intersecting outline (the silhouette boundary of the union
+ * of every subpath). Implemented by running Skia's path-ops engine via
+ * `Path.op(empty, this, Union)` - the operation produces the boundary
+ * of the union, dropping internal subpath edges that fall inside the
+ * filled region. Returns the original path on op failure (defensive
+ * fallback - both Skia and Android's PathOps are reliable in practice).
+ */
+internal fun Path.toUnifiedSilhouette(): Path {
+    if (isEmpty) return this
+    val out = Path()
+    val empty = Path()
+    return if (out.op(empty, this, PathOperation.Union)) out else this
+}
+
+/**
+ * Stamp [silhouette] under a paint configured with [shadow]'s color,
+ * alpha, blend mode, and Gaussian blur, translated by `shadow.offset`.
+ * Companion to [drawShadowPass]'s per-glyph fill flow but takes a
+ * pre-built unified silhouette so the stroked shadow renders as one
+ * outline.
+ */
+private fun DrawScope.drawShadowOnPath(
+    silhouette: Path,
+    shadow: Shadow,
+    alpha: Float,
+    style: DrawStyle,
+    blendMode: BlendMode,
+) {
+    val paint = Paint().apply {
+        color = shadow.color
+        this.alpha = alpha
+        this.blendMode = blendMode
+        applyDrawStyleToPaint(this, style)
+        configureShadowBlur(this, shadow.blurRadius)
+    }
+    drawIntoCanvas { canvas ->
+        canvas.save()
+        canvas.translate(shadow.offset.x, shadow.offset.y)
+        canvas.drawPath(silhouette, paint)
+        canvas.restore()
+    }
+}
+
+/**
  * Draw [path] under [brush] with the brush sized to the path's bounding
  * box. Bypasses [DrawScope.drawPath]'s default sizing (which uses
  * [DrawScope.size]) - inside `Modifier.drawBehind` the inner element
@@ -618,6 +793,10 @@ internal fun DrawScope.drawShapedTextInternal(
  * shader. Translating the path to the origin and the canvas back keeps
  * the painted pixels where they were while letting the shader's
  * reference frame line up with the line's leading edge.
+ *
+ * For [Stroke] styles the path is first reduced to its silhouette
+ * outline via [toUnifiedSilhouette] so a stroked combined path renders
+ * as one continuous outline rather than per-subpath strokes.
  */
 internal fun DrawScope.drawCombinedBrushPath(
     path: Path,
@@ -626,9 +805,10 @@ internal fun DrawScope.drawCombinedBrushPath(
     style: DrawStyle,
     blendMode: BlendMode,
 ) {
-    val bounds = path.getBounds()
+    val effectivePath = if (style is Stroke) path.toUnifiedSilhouette() else path
+    val bounds = effectivePath.getBounds()
     if (bounds.isEmpty) return
-    path.translate(Offset(-bounds.left, -bounds.top))
+    effectivePath.translate(Offset(-bounds.left, -bounds.top))
     drawIntoCanvas { canvas ->
         canvas.save()
         val paint = Paint().apply {
@@ -638,7 +818,7 @@ internal fun DrawScope.drawCombinedBrushPath(
         }
         brush.applyTo(Size(bounds.width, bounds.height), paint, alpha)
         canvas.translate(bounds.left, bounds.top)
-        canvas.drawPath(path, paint)
+        canvas.drawPath(effectivePath, paint)
         canvas.restore()
     }
 }
@@ -648,6 +828,12 @@ internal fun DrawScope.drawCombinedBrushPath(
  * paint configured with [shadow]'s color, alpha multiplier, blend mode,
  * and Gaussian blur. [penX] / [penY] is the shadow's pen origin (already
  * offset by `shadow.offset`).
+ *
+ * For [Stroke] styles the per-glyph paths would otherwise be stroked
+ * individually, leaving stroke seams across cursive joins, so we collapse
+ * them into a unified silhouette and stroke that once. Fill is unaffected
+ * by per-glyph overlap (the union of filled regions equals filling each
+ * glyph individually) so the per-glyph fast path is kept.
  */
 internal fun DrawScope.drawShadowPass(
     measured: MeasuredText,
@@ -665,6 +851,20 @@ internal fun DrawScope.drawShadowPass(
         this.blendMode = blendMode
         applyDrawStyleToPaint(this, style)
         configureShadowBlur(this, shadow.blurRadius)
+    }
+    if (style is Stroke) {
+        val raw = Path()
+        accumulateLineSilhouette(
+            measured = measured,
+            penX = penX,
+            penY = penY,
+            spacingScale = spacingScale,
+            target = raw,
+        )
+        if (raw.isEmpty) return
+        val unified = raw.toUnifiedSilhouette()
+        drawIntoCanvas { canvas -> canvas.drawPath(unified, paint) }
+        return
     }
     drawIntoCanvas { canvas ->
         var localPenX = penX

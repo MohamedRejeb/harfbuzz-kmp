@@ -7,6 +7,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.DrawStyle
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
 import com.mohamedrejeb.harfbuzz.core.HbDirection
 
@@ -183,6 +184,8 @@ private fun DrawScope.drawResolvedBucket(
     blendMode: BlendMode,
 ) {
     if (resolved.brush != null) {
+        // drawCombinedBrushPath already collapses subpaths to a unified
+        // silhouette when stroking, so per-bucket strokes outline cleanly.
         drawCombinedBrushPath(
             path = path,
             brush = resolved.brush,
@@ -191,8 +194,13 @@ private fun DrawScope.drawResolvedBucket(
             blendMode = blendMode,
         )
     } else {
+        // Stroke path: collapse the bucket's per-glyph subpaths to a
+        // unified silhouette so the stroked per-paint colour outlines
+        // its glyph cluster as one contour. Fill ignores the duplicate
+        // overlap (union of fills equals per-glyph fill).
+        val effectivePath = if (style is Stroke) path.toUnifiedSilhouette() else path
         drawPath(
-            path = path,
+            path = effectivePath,
             color = if (resolved.color == Color.Unspecified) Color.Black else resolved.color,
             alpha = alpha,
             style = style,
