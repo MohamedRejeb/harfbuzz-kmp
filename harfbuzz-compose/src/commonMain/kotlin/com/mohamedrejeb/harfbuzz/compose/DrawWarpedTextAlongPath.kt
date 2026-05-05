@@ -217,20 +217,26 @@ public fun DrawScope.drawWarpedTextAlongPath(
 }
 
 /**
- * Combine every glyph in [measured] into a single flat-baseline Path.
+ * Combine every glyph in [measured] into a single flat-baseline [Path].
  * Pen origin is `(0, 0)`; baseline is `y = 0`; ascenders extend into
  * negative y in Compose y-down coordinates because the per-glyph
- * outlines come from the cached `flippedPathsByFont` (already flipped
+ * outlines come from the cached flipped paths per font (already flipped
  * from HarfBuzz y-up). HarfBuzz `xOffset` / `yOffset` are applied
  * per-glyph; advances accumulate `xAdvance`.
+ *
+ * Public so external pipelines can implement their own warp drawers
+ * (e.g. an arc-specific drawer that pre-bakes the warped path inside
+ * a layout snapshot and reuses it across frames). Library-supplied
+ * drawers built on top of this primitive: [drawWarpedTextAlongPath]
+ * (generic path) and [drawArcText] (analytical circular arc).
  *
  * Glyphs whose outlines are missing (typically because the font has a
  * color paint tree but no monochrome silhouette) still advance the pen
  * so the placement of subsequent glyphs is correct. They simply do
- * not contribute to the warped path - which is the right behaviour:
- * the warp drawer is monochrome-only by design.
+ * not contribute to the path - which is the right behaviour for warp
+ * drawers, which are monochrome-only by design.
  */
-private fun buildBaselineGlyphPath(measured: MeasuredText): Path {
+public fun buildBaselineGlyphPath(measured: MeasuredText): Path {
     val src = Path()
     var penX = 0f
     for (run in measured.paragraph.runs) {
