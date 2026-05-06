@@ -24,6 +24,13 @@ package com.mohamedrejeb.harfbuzz.core.paragraph
  *                 width overrides the caller's `maxWidth` so callers
  *                 can keep `maxWidth` infinite (no wrap) while still
  *                 driving Kashida insertion.
+ *  - [AdvanceStretchTo] Single-line, post-shape per-glyph advance
+ *                 stretch. Widens every inter-glyph gap uniformly
+ *                 (no text insertion, no re-shape) so the line's
+ *                 total advance reaches the embedded target. The
+ *                 script-symmetric counterpart to [KashidaTo] for
+ *                 non-Arabic text on `ArcText`, where the only fill
+ *                 mechanism for Latin / mixed runs is letter-spacing.
  *
  * Justification is skipped when:
  *  - The paragraph's last line (multi-line) or a line whose un-justified
@@ -49,4 +56,18 @@ public sealed interface JustificationStrategy {
      * [Mixed] semantics against the paragraph's `maxWidth`.
      */
     public data class KashidaTo(public val targetWidthPx: Float) : JustificationStrategy
+
+    /**
+     * Stretch the line's per-glyph advances post-shape so the total
+     * advance reaches [targetWidthPx]. Inserts no characters and
+     * does not re-shape; the extra width is distributed uniformly
+     * across inter-glyph gaps. Designed for `ArcText` where the
+     * caller wants Latin or mixed-script text to fill the arc the
+     * way [KashidaTo] fills it for Arabic.
+     *
+     * Has no effect when [targetWidthPx] is at or below the
+     * un-justified advance, when the line has fewer than two
+     * glyphs, or when [targetWidthPx] is non-finite or non-positive.
+     */
+    public data class AdvanceStretchTo(public val targetWidthPx: Float) : JustificationStrategy
 }

@@ -17,21 +17,30 @@ import com.mohamedrejeb.harfbuzz.core.shapeParagraph
  *
  * Algorithm: greedy first-fit. For each cursor, walk the break
  * opportunities ahead and shape the candidate line; the longest
- * candidate that fits within [maxWidth] wins. If even the first
- * candidate overflows the budget, it is taken anyway (overflow is the
- * caller's problem to clip / ellipsise). Hard line breaks (LF, CR,
- * CRLF, NEL, U+2028, U+2029) terminate the line as soon as they
- * appear, regardless of width.
+ * candidate that fits within [maxWidth] wins. When even the smallest
+ * legal candidate overflows the budget, [wordBreak] decides what
+ * happens: [WordBreak.Phrase] takes the overflow as-is (the v0
+ * default), [WordBreak.BreakWord] cuts the offending word at the
+ * largest grapheme boundary that still fits, and [WordBreak.AnyChar]
+ * treats every grapheme as a break opportunity to begin with. Hard
+ * line breaks (LF, CR, CRLF, NEL, U+2028, U+2029) terminate the line
+ * as soon as they appear, regardless of width.
  *
  * `lineSpacing` is added between consecutive lines (not after the
  * last line). Per-line `lineHeight` is derived from the primary
  * font's `hExtents` (`ascender - descender + lineGap`). Multi-font
  * runs use the primary font's metrics for line stepping.
  *
- * Cost: shapes O(B) intermediate candidates per line where B is the
- * count of break opportunities the greedy walk probes. For typical
- * UI labels (a handful of words per line) this is a small constant;
- * long single-line paragraphs only shape once.
+ * Cost: [WordBreak.Phrase] and [WordBreak.BreakWord] shape O(B)
+ * intermediate candidates per line where B is the count of legal
+ * break opportunities the greedy walk probes (a small constant for
+ * typical UI labels). [WordBreak.BreakWord] adds at most one extra
+ * shape per overflowing line plus an O(graphemes-in-the-cut-span)
+ * scan over the already-shaped overflow's per-cluster cumulative
+ * advance - no extra work on lines that fit at a word boundary.
+ * [WordBreak.AnyChar] shapes once per line up to a hard break or a
+ * bounded character cap, then bisects in O(graphemes-per-line); 1-2
+ * shapes per line vs. one-per-grapheme greedy.
  */
 public suspend fun HbFontStack.layoutParagraph(
     text: String,
@@ -43,6 +52,7 @@ public suspend fun HbFontStack.layoutParagraph(
     language: HbLanguage = HbLanguage.AUTO,
     lineSpacing: Float = 0f,
     justification: JustificationStrategy = JustificationStrategy.None,
+    wordBreak: WordBreak = WordBreak.Phrase,
 ): LaidOutParagraph {
     if (text.isEmpty() || maxWidth <= 0f) {
         return LaidOutParagraph.empty(baseDirection = baseDirection, alignment = alignment)
@@ -54,17 +64,30 @@ public suspend fun HbFontStack.layoutParagraph(
     var bIdx = nextBreakIndex(breaks, cursor)
 
     while (cursor < text.length) {
-        val pick = pickLine(
-            text = text,
-            sizePx = sizePx,
-            cursor = cursor,
-            breaks = breaks,
-            startIdx = bIdx,
-            maxWidth = maxWidth,
-            baseDirection = baseDirection,
-            features = features,
-            language = language,
-        )
+        val pick = if (wordBreak == WordBreak.AnyChar) {
+            pickLineAnyChar(
+                text = text,
+                sizePx = sizePx,
+                cursor = cursor,
+                maxWidth = maxWidth,
+                baseDirection = baseDirection,
+                features = features,
+                language = language,
+            )
+        } else {
+            pickLine(
+                text = text,
+                sizePx = sizePx,
+                cursor = cursor,
+                breaks = breaks,
+                startIdx = bIdx,
+                maxWidth = maxWidth,
+                baseDirection = baseDirection,
+                features = features,
+                language = language,
+                wordBreak = wordBreak,
+            )
+        }
         rawLines.add(
             RawLine(
                 start = cursor,
@@ -76,7 +99,7 @@ public suspend fun HbFontStack.layoutParagraph(
             ),
         )
         cursor = pick.end
-        bIdx = pick.nextProbeIdx
+        bIdx = if (pick.nextProbeIdx >= 0) pick.nextProbeIdx else nextBreakIndex(breaks, cursor)
     }
 
     if (alignment == ParagraphAlignment.Justify && justification != JustificationStrategy.None) {
@@ -153,6 +176,7 @@ private suspend fun HbFontStack.pickLine(
     baseDirection: HbDirection,
     features: List<HbFeature>,
     language: HbLanguage,
+    wordBreak: WordBreak,
 ): LinePick {
     var bestEnd = -1
     var bestShape: ShapedParagraph? = null
@@ -190,8 +214,24 @@ private suspend fun HbFontStack.pickLine(
             }
         } else if (bestEnd == -1) {
             // No previous fit and this candidate doesn't fit either.
-            // Take it anyway so the layout makes forward progress;
-            // overflow is the caller's problem.
+            // Phrase: take the overflow as-is so the layout makes
+            // forward progress (caller clips / ellipsises). BreakWord:
+            // bisect within this candidate at a grapheme boundary so
+            // the prefix fits the budget; the next line resumes from
+            // the cut point.
+            if (wordBreak == WordBreak.BreakWord) {
+                return bisectByGrapheme(
+                    text = text,
+                    sizePx = sizePx,
+                    cursor = cursor,
+                    overflowShape = candidateShape,
+                    overflowText = visibleText,
+                    maxWidth = maxWidth,
+                    baseDirection = baseDirection,
+                    features = features,
+                    language = language,
+                )
+            }
             bestEnd = candidateEnd
             bestShape = candidateShape
             bestText = visibleText
@@ -215,6 +255,195 @@ private suspend fun HbFontStack.pickLine(
 }
 
 /**
+ * AnyChar fast path: shape one capped slice per line, then bisect by
+ * grapheme using the slice's per-cluster cumulative advance. Caps
+ * shape work at [ANY_CHAR_SHAPE_CAP] characters so a long
+ * single-script paragraph (CJK without hard breaks) does not pay
+ * O(text.length) per line.
+ *
+ * The slice covers `[cursor, min(cursor + ANY_CHAR_SHAPE_CAP,
+ * nextHardBreakBoundary, text.length))`. If the whole slice fits the
+ * budget we take it; otherwise the bisect picks the largest grapheme
+ * prefix that fits and re-shapes it. Hard-break detection inside the
+ * slice is kept faithful to the existing `pickLine` semantics: a
+ * trailing line terminator (LF, CR, CRLF, NEL, U+2028,
+ * U+2029) ends the line even when room remains.
+ */
+private suspend fun HbFontStack.pickLineAnyChar(
+    text: String,
+    sizePx: Float,
+    cursor: Int,
+    maxWidth: Float,
+    baseDirection: HbDirection,
+    features: List<HbFeature>,
+    language: HbLanguage,
+): LinePick {
+    val capEnd = (cursor + ANY_CHAR_SHAPE_CAP).coerceAtMost(text.length)
+    // Stop the shape at the first hard break inside the cap window; we
+    // include the hard-break char itself (and the following `\n` for a
+    // CR-LF pair) so the line consumes it like Phrase / BreakWord do.
+    val sliceEnd = nextHardBreakBoundary(text, cursor, capEnd)
+
+    val sliceText = text.substring(cursor, sliceEnd)
+    val visibleText = sliceText.trimEndForLineBreak()
+    val sliceShape = shapeParagraph(visibleText, sizePx, baseDirection, features, language)
+    val containsHardBreak = sliceText.indexOfLast { isHardBreakChar(it) } >= 0
+
+    if (sliceShape.totalAdvance <= maxWidth) {
+        return LinePick(
+            end = sliceEnd,
+            shape = sliceShape,
+            shapedText = visibleText,
+            nextProbeIdx = -1,
+            endedByHardBreak = containsHardBreak,
+        )
+    }
+
+    return bisectByGrapheme(
+        text = text,
+        sizePx = sizePx,
+        cursor = cursor,
+        overflowShape = sliceShape,
+        overflowText = visibleText,
+        maxWidth = maxWidth,
+        baseDirection = baseDirection,
+        features = features,
+        language = language,
+    )
+}
+
+/**
+ * Cut the line at the largest grapheme boundary inside [overflowText]
+ * whose prefix advance still fits [maxWidth], using
+ * [overflowShape]'s per-cluster cumulative advance to score
+ * boundaries without re-shaping each candidate. Re-shapes the chosen
+ * prefix once for the line's render so glyph data is correct.
+ *
+ * The cumulative-advance estimate is exact for non-cursive scripts.
+ * In Arabic the chosen prefix's joining forms differ from those in
+ * the connected word, so the re-shaped advance can differ from the
+ * estimate by a few pixels at the cut - acceptable for a fitting
+ * heuristic; consumers needing pixel-perfect joining should pin
+ * [WordBreak.Phrase] and accept the overflow.
+ *
+ * Always makes forward progress: when even the first grapheme's
+ * advance exceeds the budget the bisect still cuts at that grapheme
+ * so the outer loop never stalls.
+ */
+private suspend fun HbFontStack.bisectByGrapheme(
+    text: String,
+    sizePx: Float,
+    cursor: Int,
+    overflowShape: ShapedParagraph,
+    overflowText: String,
+    maxWidth: Float,
+    baseDirection: HbDirection,
+    features: List<HbFeature>,
+    language: HbLanguage,
+): LinePick {
+    val cumulative = perIndexCumulativeAdvance(overflowShape, overflowText.length)
+    val boundaries = graphemeBreakOpportunities(overflowText)
+
+    // Walk from largest to smallest grapheme boundary; first one whose
+    // cumulative advance fits the budget wins. Boundaries are sorted
+    // ascending so this is at most |boundaries| comparisons in the
+    // worst case (single tall grapheme).
+    var chosenLocal = -1
+    for (i in boundaries.size - 1 downTo 1) {
+        val b = boundaries[i]
+        if (cumulative[b] <= maxWidth) {
+            chosenLocal = b
+            break
+        }
+    }
+
+    // Forward progress: take the first grapheme even if it overflows.
+    // Bisect is only invoked on a non-empty overflow (totalAdvance >
+    // maxWidth implies at least one glyph), so boundaries always
+    // contains a positive entry past `0`.
+    if (chosenLocal < 0) chosenLocal = boundaries[1]
+
+    val prefixEnd = cursor + chosenLocal
+    val prefixSrc = text.substring(cursor, prefixEnd)
+    val prefixVisible = prefixSrc.trimEndForLineBreak()
+    val prefixShape = if (chosenLocal == overflowText.length) {
+        // The whole shaped overflow won; reuse it instead of paying
+        // for an identical re-shape.
+        overflowShape
+    } else {
+        shapeParagraph(prefixVisible, sizePx, baseDirection, features, language)
+    }
+
+    return LinePick(
+        end = prefixEnd,
+        shape = prefixShape,
+        shapedText = prefixVisible,
+        nextProbeIdx = -1,
+        endedByHardBreak = false,
+    )
+}
+
+/**
+ * Build a `[textLen + 1]` array where `out[b]` is the cumulative
+ * advance of all glyphs whose cluster is in `[0, b)` - i.e. the
+ * shape's idea of how wide the prefix `text[0, b)` is. Used by
+ * [bisectByGrapheme] to score grapheme boundaries without
+ * per-candidate re-shaping.
+ *
+ * Multi-glyph clusters (decomposed marks) sum into the cluster's
+ * leading source index; `out[textLen]` always equals the shape's
+ * `totalAdvance`. The estimate is conservative for ligature clusters
+ * that cross a grapheme boundary - rare in Latin and harmless for
+ * the bisect's cut decision.
+ */
+private fun perIndexCumulativeAdvance(shape: ShapedParagraph, textLen: Int): FloatArray {
+    val out = FloatArray(textLen + 1)
+    for (run in shape.runs) {
+        val glyphs = run.glyphs
+        val positions = run.positions
+        for (i in glyphs.indices) {
+            val cluster = glyphs[i].cluster
+            if (cluster in 0 until textLen) {
+                out[cluster] += positions[i].xAdvance
+            }
+        }
+    }
+    var sum = 0f
+    for (i in 0..textLen) {
+        val v = out[i]
+        out[i] = sum
+        sum += v
+    }
+    return out
+}
+
+/**
+ * Index just past the first hard-break sequence in `[cursor, cap)`,
+ * or [cap] when none is present. CR-LF pairs collapse to a single
+ * boundary so the line consumes both code units in one step.
+ */
+private fun nextHardBreakBoundary(text: String, cursor: Int, cap: Int): Int {
+    var i = cursor
+    while (i < cap) {
+        val ch = text[i]
+        if (isHardBreakChar(ch)) {
+            return if (ch == '\r' && i + 1 < cap && text[i + 1] == '\n') i + 2 else i + 1
+        }
+        i++
+    }
+    return cap
+}
+
+/**
+ * Per-line shape budget for [WordBreak.AnyChar]. Bounds worst-case
+ * shape work on long single-script paragraphs (CJK without hard
+ * breaks); typical UI lines (under any realistic `maxWidth` /
+ * `sizePx` combination) fit in fewer characters than this and never
+ * trigger the cap.
+ */
+private const val ANY_CHAR_SHAPE_CAP: Int = 4096
+
+/**
  * Strip trailing whitespace and hard-break characters from a line slice
  * before measuring its visible advance. Mirrors UAX #14's recommendation
  * that trailing space at a break is "free" - it does not contribute to
@@ -223,10 +452,20 @@ private suspend fun HbFontStack.pickLine(
 private fun String.trimEndForLineBreak(): String =
     this.trimEnd { ch -> ch == ' ' || ch == '\t' || isHardBreakChar(ch) }
 
+/**
+ * Smallest `i` in `[0, breaks.size]` with `breaks[i] > cursor`.
+ * Binary-searches the strictly-ascending `breaks` array so the
+ * post-bisect re-derive path stays O(log breaks.size) per line, not
+ * O(breaks.size).
+ */
 private fun nextBreakIndex(breaks: IntArray, cursor: Int): Int {
-    var i = 0
-    while (i < breaks.size && breaks[i] <= cursor) i++
-    return i
+    var lo = 0
+    var hi = breaks.size
+    while (lo < hi) {
+        val mid = (lo + hi) ushr 1
+        if (breaks[mid] <= cursor) lo = mid + 1 else hi = mid
+    }
+    return lo
 }
 
 /**

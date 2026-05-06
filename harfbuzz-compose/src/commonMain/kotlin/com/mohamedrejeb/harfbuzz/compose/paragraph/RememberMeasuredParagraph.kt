@@ -13,6 +13,7 @@ import com.mohamedrejeb.harfbuzz.core.HbLanguage
 import com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy
 import com.mohamedrejeb.harfbuzz.core.paragraph.LaidOutParagraph
 import com.mohamedrejeb.harfbuzz.core.paragraph.ParagraphAlignment
+import com.mohamedrejeb.harfbuzz.core.paragraph.WordBreak
 import com.mohamedrejeb.harfbuzz.core.paragraph.layoutParagraph
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -21,9 +22,12 @@ import kotlin.coroutines.cancellation.CancellationException
  * the result + per-line [com.mohamedrejeb.harfbuzz.compose.MeasuredText]
  * caches into a [MeasuredParagraph] safe to retain across recompositions.
  *
- * Returns a [State] of [MeasuredParagraphLoad]. The build runs off-main,
- * so the initial value is [MeasuredParagraphLoad.Loading] until layout
- * completes.
+ * Returns a [State] of [MeasuredParagraphLoad]. The build runs off-main.
+ * The initial value is [MeasuredParagraphLoad.Loading] until the first
+ * layout completes; subsequent input changes keep the previous
+ * [MeasuredParagraphLoad.Ready] visible while the new layout runs
+ * (stale-while-revalidate), so animating size, maxWidth, features etc.
+ * does not blank the rendered paragraph between frames.
  */
 @Composable
 public fun rememberMeasuredParagraph(
@@ -37,6 +41,7 @@ public fun rememberMeasuredParagraph(
     language: HbLanguage = HbLanguage.AUTO,
     lineSpacing: Float = 0f,
     justification: JustificationStrategy = JustificationStrategy.None,
+    wordBreak: WordBreak = WordBreak.Phrase,
 ): State<MeasuredParagraphLoad> {
     val stack = remember(font) { HbFontStack(font) }
     return rememberMeasuredParagraph(
@@ -50,6 +55,7 @@ public fun rememberMeasuredParagraph(
         language = language,
         lineSpacing = lineSpacing,
         justification = justification,
+        wordBreak = wordBreak,
     )
 }
 
@@ -71,12 +77,16 @@ public fun rememberMeasuredParagraph(
     language: HbLanguage = HbLanguage.AUTO,
     lineSpacing: Float = 0f,
     justification: JustificationStrategy = JustificationStrategy.None,
+    wordBreak: WordBreak = WordBreak.Phrase,
 ): State<MeasuredParagraphLoad> {
     return produceState<MeasuredParagraphLoad>(
         initialValue = MeasuredParagraphLoad.Loading,
-        text, fontStack, sizePx, maxWidth, alignment, direction, features, language, lineSpacing, justification,
+        text, fontStack, sizePx, maxWidth, alignment, direction,
+        features, language, lineSpacing, justification, wordBreak,
     ) {
-        value = MeasuredParagraphLoad.Loading
+        // Deliberately do NOT reset to Loading here: keep the previous
+        // Ready value visible while the new layout runs so size /
+        // maxWidth / feature animation does not blank the paragraph.
         try {
             val measured = buildMeasuredParagraph(
                 text = text,
@@ -89,6 +99,7 @@ public fun rememberMeasuredParagraph(
                 language = language,
                 lineSpacing = lineSpacing,
                 justification = justification,
+                wordBreak = wordBreak,
             )
             value = MeasuredParagraphLoad.Ready(measured)
         } catch (ce: CancellationException) {
@@ -107,7 +118,7 @@ public fun rememberMeasuredParagraph(
 private fun isStaleHbHandle(cause: Throwable): Boolean =
     cause is IllegalStateException && cause.message == "hb object disposed"
 
-internal suspend fun buildMeasuredParagraph(
+public suspend fun buildMeasuredParagraph(
     text: String,
     fontStack: HbFontStack,
     sizePx: Float,
@@ -118,6 +129,7 @@ internal suspend fun buildMeasuredParagraph(
     language: HbLanguage,
     lineSpacing: Float,
     justification: JustificationStrategy,
+    wordBreak: WordBreak = WordBreak.Phrase,
 ): MeasuredParagraph {
     if (text.isEmpty() || maxWidth <= 0f) return MeasuredParagraph.empty(fontStack)
 
@@ -131,6 +143,7 @@ internal suspend fun buildMeasuredParagraph(
         language = language,
         lineSpacing = lineSpacing,
         justification = justification,
+        wordBreak = wordBreak,
     )
 
     val lines = layout.lines.map { line ->

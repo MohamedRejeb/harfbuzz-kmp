@@ -89,4 +89,34 @@ class MeasureKeyTest {
         font.close()
         face.close()
     }
+
+    @Test
+    fun `sizePx values inside the same bucket produce equal keys`() = runBlocking {
+        harfBuzzInit()
+        val face = HbFace.fromBytes(TestFonts.robotoRegular())
+        val font = face.toFont()
+        val stack = HbFontStack(font)
+
+        fun keyAt(sizePx: Float) = measureKeyOf(
+            text = "abc",
+            fontStack = stack,
+            sizePx = sizePx,
+            features = emptyList(),
+            direction = HbDirection.AUTO,
+            language = HbLanguage.AUTO,
+        )
+
+        // Slider scrub through a half-pixel bucket: every value rounds
+        // to 28.0 except the upper edge, which already belongs to the
+        // 28.5 bucket. Without quantization a 60 Hz slider would burn
+        // the 32-entry LRU on every tick.
+        assertEquals(keyAt(28.0f), keyAt(28.1f))
+        assertEquals(keyAt(28.0f), keyAt(28.2f))
+        assertNotEquals(keyAt(28.0f), keyAt(28.5f))
+        assertEquals(keyAt(28.5f), keyAt(28.6f))
+        assertEquals(keyAt(28.5f), keyAt(28.7f))
+
+        font.close()
+        face.close()
+    }
 }

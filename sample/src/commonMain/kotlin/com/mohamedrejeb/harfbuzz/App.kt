@@ -506,6 +506,16 @@ private fun LazyListScope.demoSections(
     item("line-layout") { Box(itemModifier) { LineLayoutDemo(latin, arabic) } }
     item("dynamic") { Box(itemModifier) { DynamicTextDemo(latin, arabic) } }
     item("arc") { Box(itemModifier) { ArcTextDemo(arabicBold) } }
+
+    item("section-stroke") {
+        Box(itemModifier) {
+            SectionHeader(
+                title = "Stroke",
+                subtitle = "Outlined glyphs at multiple widths - watch cursive joins.",
+            )
+        }
+    }
+    item("stroke") { Box(itemModifier) { StrokeDemo(latin, arabic, arabicBold) } }
 }
 
 @Composable
@@ -1502,6 +1512,61 @@ private fun ShapedTextWithBounds(
                 }
             },
     )
+}
+
+/**
+ * Reproduces the "internal stroke artefacts on cursive Arabic" issue: each
+ * connected letter's silhouette is stroked individually, so where letters
+ * join cursively (or where a dot overlaps a base form) the stroke shows
+ * through inside the word instead of forming a single outline around the
+ * silhouette. Slide the stroke width up on the Arabic row to make the
+ * artefact obvious; Latin doesn't connect, so it's clean at any width.
+ */
+@Composable
+private fun StrokeDemo(latin: DemoFont, arabic: DemoFont, arabicBold: DemoFont) {
+    var widthPx by remember { mutableStateOf(4f) }
+    val strokeColor = Color(0xFFB00020)
+    DemoCard(
+        title = "Stroke",
+        subtitle = "Slide width up - watch the cursive joins on the Arabic line",
+    ) {
+        ControlLabel("Stroke width: ${widthPx.toInt()} px")
+        Slider(
+            value = widthPx,
+            onValueChange = { widthPx = it },
+            valueRange = 1f..12f,
+        )
+
+        OutputLabel("Latin (Roboto, 64 px)")
+        ShapedText(
+            text = "Stroke",
+            font = latin.font,
+            sizePx = 64f,
+            color = strokeColor,
+            style = Stroke(width = widthPx),
+            modifier = Modifier.fillMaxWidth().height(80.dp),
+        )
+
+        OutputLabel("Arabic - one cursive word (Noto Naskh Bold, 96 px)")
+        ShapedText(
+            text = "السلام",
+            font = arabicBold.font,
+            sizePx = 96f,
+            color = strokeColor,
+            style = Stroke(width = widthPx),
+            modifier = Modifier.fillMaxWidth().height(140.dp),
+        )
+
+        OutputLabel("Arabic with marks (Noto Naskh Regular, 64 px)")
+        ShapedText(
+            text = "بِسْمِ اللَّهِ",
+            font = arabic.font,
+            sizePx = 64f,
+            color = strokeColor,
+            style = Stroke(width = widthPx),
+            modifier = Modifier.fillMaxWidth().height(96.dp),
+        )
+    }
 }
 
 @Composable

@@ -112,6 +112,29 @@ class StrokeShadowScreenshotTest {
         }
     }
 
+    /**
+     * Large Arabic stroke on a connected cursive word: every letter joins
+     * the next inside the silhouette, so per-glyph stroking would leave
+     * stroke seams along the joins. The unified-silhouette stroke pass
+     * outlines the silhouette as one contour and the seams disappear.
+     */
+    @Test
+    fun `stroke arabic naskh thick on connected word`() {
+        val (font, sizePx) = loadFont(FontPath.ARABIC_BOLD, 96f)
+        rule.captureGolden("stroke_arabic_naskh_thick_connected_word.png") {
+            Stage {
+                ShapedText(
+                    text = "السلام",
+                    font = font,
+                    sizePx = sizePx,
+                    color = Color(0xFFB00020),
+                    style = Stroke(width = 6f),
+                    modifier = Modifier.fillMaxWidth().height(160.dp),
+                )
+            }
+        }
+    }
+
     @Test
     fun `stroke aref ruqaa ink falls back to outline`() {
         val (font, sizePx) = loadFont(FontPath.AREF_RUQAA_INK_REGULAR, 40f)

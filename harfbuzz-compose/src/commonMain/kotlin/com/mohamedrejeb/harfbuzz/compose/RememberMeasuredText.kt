@@ -16,6 +16,7 @@ import com.mohamedrejeb.harfbuzz.core.MeasuredFontPass
 import com.mohamedrejeb.harfbuzz.core.RecordedPaintOp
 import com.mohamedrejeb.harfbuzz.core.buildMeasured
 import com.mohamedrejeb.harfbuzz.core.defaultFlagsFor
+import com.mohamedrejeb.harfbuzz.core.paragraph.AdvanceStretchJustifier
 import com.mohamedrejeb.harfbuzz.core.paragraph.ArabicTextUtils
 import com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy
 import com.mohamedrejeb.harfbuzz.core.paragraph.LineJustifier
@@ -31,8 +32,12 @@ import kotlin.coroutines.cancellation.CancellationException
  * [MeasuredText] safe to retain across recompositions.
  *
  * Returns a [State] of [MeasuredTextLoad]. The build runs off-main
- * (background dispatcher on JVM/Android/iOS, worker on Wasm), so the
- * initial value is [MeasuredTextLoad.Loading] until shaping completes.
+ * (background dispatcher on JVM/Android/iOS, worker on Wasm). The
+ * initial value is [MeasuredTextLoad.Loading] until the first shape
+ * completes; subsequent input changes keep the previous
+ * [MeasuredTextLoad.Ready] visible while the new build runs
+ * (stale-while-revalidate), so animating size, features, justification
+ * etc. does not blank the rendered text between frames.
  *
  * The paint-tree cache means [drawShapedText] never touches JNI per
  * frame: every redraw replays the recorded ops directly.
@@ -80,7 +85,9 @@ public fun rememberMeasuredText(
         initialValue = MeasuredTextLoad.Loading,
         text, fontStack, sizePx, features, direction, language, maxWidth, justification,
     ) {
-        value = MeasuredTextLoad.Loading
+        // Deliberately do NOT reset to Loading here: keep the previous
+        // Ready value visible while the new build runs so size /
+        // feature / justification animation does not blank the text.
         try {
             val measured = buildMeasuredTextWithJustify(
                 text, fontStack, sizePx, features, direction, language, maxWidth, justification,
@@ -116,7 +123,7 @@ public fun rememberMeasuredText(
  * `targetWidthPx` overrides it so callers can keep `maxWidth` infinite
  * (no wrap) while still driving Kashida insertion.
  */
-internal suspend fun buildMeasuredTextWithJustify(
+public suspend fun buildMeasuredTextWithJustify(
     text: String,
     fontStack: HbFontStack,
     sizePx: Float,
@@ -129,6 +136,7 @@ internal suspend fun buildMeasuredTextWithJustify(
     val initial = buildMeasuredText(text, fontStack, sizePx, features, direction, language)
     val targetWidth = when (justification) {
         is JustificationStrategy.KashidaTo -> justification.targetWidthPx
+        is JustificationStrategy.AdvanceStretchTo -> justification.targetWidthPx
         else -> maxWidth
     }
     if (
@@ -138,6 +146,12 @@ internal suspend fun buildMeasuredTextWithJustify(
         targetWidth <= 0f ||
         initial.advance >= targetWidth
     ) return initial
+
+    if (justification is JustificationStrategy.AdvanceStretchTo) {
+        val stretched = AdvanceStretchJustifier.stretch(initial.paragraph, targetWidth)
+        return if (stretched === initial.paragraph) initial
+        else initial.withStretchedParagraph(stretched)
+    }
 
     val needsKashidaWidth = justification == JustificationStrategy.Mixed ||
         justification is JustificationStrategy.KashidaTo
@@ -169,7 +183,7 @@ internal suspend fun buildMeasuredTextWithJustify(
 private fun isStaleHbHandle(cause: Throwable): Boolean =
     cause is IllegalStateException && cause.message == "hb object disposed"
 
-internal suspend fun buildMeasuredText(
+public suspend fun buildMeasuredText(
     text: String,
     fontStack: HbFontStack,
     sizePx: Float,
@@ -177,13 +191,22 @@ internal suspend fun buildMeasuredText(
     direction: HbDirection,
     language: HbLanguage,
 ): MeasuredText {
+    // Bucket the requested size to [SIZE_PX_BUCKET_PX] before keying the
+    // cache and before passing it down to the shaper. Slider scrubs that
+    // emit dozens of distinct floats per second collapse to a handful of
+    // entries instead of churning the LRU; the resulting [MeasuredText]
+    // reports the bucketed size in [MeasuredText.sizePx], so behaviour
+    // is deterministic regardless of which slider value arrived first
+    // in a bucket. The visual difference between requested and bucketed
+    // size is sub-pixel and invisible above small body text.
+    val bucketedSizePx = quantizeSizePxForCache(sizePx)
     // Fast path: cache hit on identical layout-affecting inputs. The key
     // intentionally excludes paint-only props (color, alpha, shadow) so
     // animating them never invalidates the entry. See [MeasuredTextCache]
     // for the workloads this catches.
-    val cacheKey = measureKeyOf(text, fontStack, sizePx, features, direction, language)
+    val cacheKey = measureKeyOf(text, fontStack, bucketedSizePx, features, direction, language)
     MeasuredTextCache.get(cacheKey)?.let { return it }
-    val measured = buildMeasuredTextUncached(text, fontStack, sizePx, features, direction, language)
+    val measured = buildMeasuredTextUncached(text, fontStack, bucketedSizePx, features, direction, language)
     // Empty-text builds skip the cache: there's nothing to amortise and an
     // empty entry per (fontStack, features, ...) tuple would just pollute
     // the working set.
@@ -306,8 +329,20 @@ private suspend fun parseFontPass(
     val font = pass.font
     val pathScale = font.pathScale
 
-    val flippedPaths = LazyGlyphPathMap(pass.flippedPathSvg, flipY = true, scale = pathScale)
-    val rawPaths = LazyGlyphPathMap(pass.rawPathSvg, flipY = false, scale = pathScale)
+    val flippedPaths = LazyGlyphPathMap(
+        rawSvgs = pass.flippedPathSvg,
+        flipY = true,
+        scale = pathScale,
+        font = font,
+        sizePx = sizePx,
+    )
+    val rawPaths = LazyGlyphPathMap(
+        rawSvgs = pass.rawPathSvg,
+        flipY = false,
+        scale = pathScale,
+        font = font,
+        sizePx = sizePx,
+    )
     val paintTrees = LazyPaintTreeMap(pass.paintTreeBytes)
 
     // SVG-in-OT raster is the single most expensive per-glyph step
