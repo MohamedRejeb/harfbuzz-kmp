@@ -13,6 +13,7 @@ import com.mohamedrejeb.harfbuzz.core.HbLanguage
 import com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy
 import com.mohamedrejeb.harfbuzz.core.paragraph.LaidOutParagraph
 import com.mohamedrejeb.harfbuzz.core.paragraph.ParagraphAlignment
+import com.mohamedrejeb.harfbuzz.core.paragraph.WordBreak
 import com.mohamedrejeb.harfbuzz.core.paragraph.layoutParagraph
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -40,6 +41,7 @@ public fun rememberMeasuredParagraph(
     language: HbLanguage = HbLanguage.AUTO,
     lineSpacing: Float = 0f,
     justification: JustificationStrategy = JustificationStrategy.None,
+    wordBreak: WordBreak = WordBreak.Phrase,
 ): State<MeasuredParagraphLoad> {
     val stack = remember(font) { HbFontStack(font) }
     return rememberMeasuredParagraph(
@@ -53,6 +55,7 @@ public fun rememberMeasuredParagraph(
         language = language,
         lineSpacing = lineSpacing,
         justification = justification,
+        wordBreak = wordBreak,
     )
 }
 
@@ -74,10 +77,12 @@ public fun rememberMeasuredParagraph(
     language: HbLanguage = HbLanguage.AUTO,
     lineSpacing: Float = 0f,
     justification: JustificationStrategy = JustificationStrategy.None,
+    wordBreak: WordBreak = WordBreak.Phrase,
 ): State<MeasuredParagraphLoad> {
     return produceState<MeasuredParagraphLoad>(
         initialValue = MeasuredParagraphLoad.Loading,
-        text, fontStack, sizePx, maxWidth, alignment, direction, features, language, lineSpacing, justification,
+        text, fontStack, sizePx, maxWidth, alignment, direction,
+        features, language, lineSpacing, justification, wordBreak,
     ) {
         // Deliberately do NOT reset to Loading here: keep the previous
         // Ready value visible while the new layout runs so size /
@@ -94,6 +99,7 @@ public fun rememberMeasuredParagraph(
                 language = language,
                 lineSpacing = lineSpacing,
                 justification = justification,
+                wordBreak = wordBreak,
             )
             value = MeasuredParagraphLoad.Ready(measured)
         } catch (ce: CancellationException) {
@@ -123,6 +129,7 @@ public suspend fun buildMeasuredParagraph(
     language: HbLanguage,
     lineSpacing: Float,
     justification: JustificationStrategy,
+    wordBreak: WordBreak = WordBreak.Phrase,
 ): MeasuredParagraph {
     if (text.isEmpty() || maxWidth <= 0f) return MeasuredParagraph.empty(fontStack)
 
@@ -136,6 +143,7 @@ public suspend fun buildMeasuredParagraph(
         language = language,
         lineSpacing = lineSpacing,
         justification = justification,
+        wordBreak = wordBreak,
     )
 
     val lines = layout.lines.map { line ->
