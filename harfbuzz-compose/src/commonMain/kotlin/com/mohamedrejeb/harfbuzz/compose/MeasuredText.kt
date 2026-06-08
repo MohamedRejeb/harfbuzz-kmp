@@ -11,6 +11,7 @@ import com.mohamedrejeb.harfbuzz.core.HbFontStack
 import com.mohamedrejeb.harfbuzz.core.HbRect
 import com.mohamedrejeb.harfbuzz.core.RecordedPaintOp
 import com.mohamedrejeb.harfbuzz.core.ShapedParagraph
+import com.mohamedrejeb.harfbuzz.core.paragraph.AdvanceStretchJustifier
 
 /**
  * The Compose-side bundle of everything needed to render a piece of text
@@ -537,6 +538,54 @@ internal fun MeasuredText.withStretchedParagraph(
         fontStack = fontStack,
         sizePx = sizePx,
         ink = ink,
+        logical = newLogical,
+        baseline = baseline,
+        advance = newAdvance,
+        ascent = ascent,
+        descent = descent,
+        lineGap = lineGap,
+        textLength = textLength,
+        flippedPathsByFont = flippedPathsByFont,
+        rawPathsByFont = rawPathsByFont,
+        colorLayersByFont = colorLayersByFont,
+        paintTreesByFont = paintTreesByFont,
+        svgGlyphCachesByFont = svgGlyphCachesByFont,
+        hasColorGlyphs = hasColorGlyphs,
+        hasColorPaintTree = hasColorPaintTree,
+        hasColorSvg = hasColorSvg,
+        originalToJustifiedIndex = originalToJustifiedIndex,
+        shapedTextLength = shapedTextLength,
+    )
+}
+
+/**
+ * Apply uniform letter-spacing to [this] by adding [perGapPx] to every
+ * inter-cluster gap (positive widens / tracks, negative tightens) via
+ * [AdvanceStretchJustifier.applyLetterSpacing], then rebuild the cached
+ * measurements (advance, logical box, ink). Per-glyph outline / color
+ * caches are reused by reference because letter-spacing only changes
+ * advances, not glyph identity.
+ *
+ * Returns [this] unchanged when [perGapPx] is `0` / non-finite or the
+ * paragraph has nothing to space (single cluster, empty).
+ */
+public fun MeasuredText.withLetterSpacing(perGapPx: Float): MeasuredText {
+    if (perGapPx == 0f || !perGapPx.isFinite()) return this
+    val spaced = AdvanceStretchJustifier.applyLetterSpacing(paragraph, perGapPx)
+    if (spaced === paragraph) return this
+    val newAdvance = spaced.totalAdvance
+    val newLogical = Rect(
+        left = 0f,
+        top = -ascent,
+        right = newAdvance,
+        bottom = descent + lineGap,
+    )
+    val newInk = if (spaced.ink.isEmpty) ink else spaced.ink.toComposeRect()
+    return MeasuredText(
+        paragraph = spaced,
+        fontStack = fontStack,
+        sizePx = sizePx,
+        ink = newInk,
         logical = newLogical,
         baseline = baseline,
         advance = newAdvance,

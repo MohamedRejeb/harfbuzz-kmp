@@ -8,7 +8,10 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class TashkeelHelpersTest {
-    private val red = SpanStyle(color = Color.Red)
+    // withTashkeelColor sets clearBrush so a per-mark color paints
+    // solid even when the outer call carries a Brush. Tests that
+    // assert against the produced spans use the same value here.
+    private val red = SpanStyle(color = Color.Red, clearBrush = true)
 
     @Test
     fun emptyTextReturnsSelf() {
@@ -91,6 +94,17 @@ class TashkeelHelpersTest {
         assertEquals(1, s.spans.size)
         assertEquals(brush, s.spans[0].style.brush)
         assertEquals(Color.Unspecified, s.spans[0].style.color)
+    }
+
+    @Test
+    fun colorHelperOptOutKeepsClearBrushOff() {
+        // Opt-in to participating in the outer brush: produced spans
+        // must NOT carry clearBrush, so the bucket draw still paints
+        // tashkeel chars with the inherited brush.
+        val s = StyledText("بَ").withTashkeelColor(Color.Red, participatesInOuterBrush = true)
+        assertEquals(1, s.spans.size)
+        assertEquals(Color.Red, s.spans[0].style.color)
+        assertFalse(s.spans[0].style.clearBrush)
     }
 
     @Test

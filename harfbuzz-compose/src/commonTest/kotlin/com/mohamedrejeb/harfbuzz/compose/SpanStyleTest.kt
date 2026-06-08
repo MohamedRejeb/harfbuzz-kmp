@@ -13,6 +13,9 @@ class SpanStyleTest {
         val style = SpanStyle()
         assertEquals(Color.Unspecified, style.color)
         assertNull(style.brush)
+        // clearBrush opts in to brush reset; off by default so old
+        // call sites keep their existing semantics.
+        assertEquals(false, style.clearBrush)
     }
 
     @Test

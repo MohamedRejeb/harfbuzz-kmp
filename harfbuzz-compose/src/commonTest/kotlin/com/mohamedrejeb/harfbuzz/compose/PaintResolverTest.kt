@@ -13,9 +13,11 @@ class PaintResolverTest {
     private fun resolverFor(
         clusterEnds: Map<Int, Int>,
         spans: List<StyleRange>,
+        clusterText: String = "",
     ): PaintResolver = PaintResolver(
         spans = spans,
         clusterEnds = clusterEnds,
+        clusterText = clusterText,
         defaultColor = defaultColor,
         defaultBrush = defaultBrush,
     )
@@ -153,6 +155,92 @@ class PaintResolverTest {
         assertEquals(
             ResolvedPaint(Color.Black, null),
             r.resolve(clusterStart = 0, glyphIndexInCluster = 0, glyphsInCluster = 1),
+        )
+    }
+
+    @Test
+    fun clearBrushDropsOuterBrush() {
+        // The composable carries a paragraph-wide brush; a per-glyph
+        // span sets only color + clearBrush. Resolved paint must drop
+        // the inherited brush so the bucket draw paints solid color
+        // instead of the outer gradient.
+        val outerBrush = SolidColor(Color.Green)
+        val resolver = PaintResolver(
+            spans = listOf(
+                StyleRange(0, 1, SpanStyle(color = Color.Red, clearBrush = true)),
+            ),
+            clusterEnds = mapOf(0 to 1),
+            clusterText = "",
+            defaultColor = Color.Black,
+            defaultBrush = outerBrush,
+        )
+        assertEquals(
+            ResolvedPaint(Color.Red, null),
+            resolver.resolve(clusterStart = 0, glyphIndexInCluster = 0, glyphsInCluster = 1),
+        )
+    }
+
+    @Test
+    fun clearBrushOnlySpanLeavesColorAlone() {
+        // A span that ONLY clears brush (no color, no brush) drops
+        // the inherited brush but leaves the running color at the
+        // outer default - the span's own SpanStyle.color is
+        // Unspecified, so per-attribute later-wins keeps the prior
+        // (default) color.
+        val outerBrush = SolidColor(Color.Green)
+        val resolver = PaintResolver(
+            spans = listOf(StyleRange(0, 1, SpanStyle(clearBrush = true))),
+            clusterEnds = mapOf(0 to 1),
+            clusterText = "",
+            defaultColor = Color.Black,
+            defaultBrush = outerBrush,
+        )
+        assertEquals(
+            ResolvedPaint(Color.Black, null),
+            resolver.resolve(clusterStart = 0, glyphIndexInCluster = 0, glyphsInCluster = 1),
+        )
+    }
+
+    @Test
+    fun laterBrushSpanReSetsAfterClearBrush() {
+        // clearBrush in span 0 unsets the brush; span 1's brush
+        // re-sets it. Per-attribute later-wins still applies.
+        val outerBrush = SolidColor(Color.Green)
+        val laterBrush = SolidColor(Color.Blue)
+        val resolver = PaintResolver(
+            spans = listOf(
+                StyleRange(0, 1, SpanStyle(color = Color.Red, clearBrush = true)),
+                StyleRange(0, 1, SpanStyle(brush = laterBrush)),
+            ),
+            clusterEnds = mapOf(0 to 1),
+            clusterText = "",
+            defaultColor = Color.Black,
+            defaultBrush = outerBrush,
+        )
+        assertEquals(
+            ResolvedPaint(Color.Red, laterBrush),
+            resolver.resolve(clusterStart = 0, glyphIndexInCluster = 0, glyphsInCluster = 1),
+        )
+    }
+
+    @Test
+    fun clearBrushOnlyFiresInsideSpanRange() {
+        // A clearBrush span covering [0, 1) must NOT clear the brush
+        // for a glyph at clusterStart = 1. Source-index gating works
+        // identically to color/brush setters.
+        val outerBrush = SolidColor(Color.Green)
+        val resolver = PaintResolver(
+            spans = listOf(
+                StyleRange(0, 1, SpanStyle(color = Color.Red, clearBrush = true)),
+            ),
+            clusterEnds = mapOf(0 to 1, 1 to 2),
+            clusterText = "",
+            defaultColor = Color.Black,
+            defaultBrush = outerBrush,
+        )
+        assertEquals(
+            ResolvedPaint(Color.Black, outerBrush),
+            resolver.resolve(clusterStart = 1, glyphIndexInCluster = 0, glyphsInCluster = 1),
         )
     }
 }

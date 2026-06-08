@@ -16,9 +16,19 @@ import androidx.compose.ui.graphics.Color
  * the prior value. The composable's outer `color` / `brush`
  * parameters supply the default that applies wherever no span sets
  * that attribute.
+ *
+ * @property clearBrush When `true`, the resolver drops the running
+ *   brush at this span's iteration step before applying [color] and
+ *   [brush] from the same span. Use it when a per-span [color] must
+ *   paint solid over an inherited [Brush] (the composable's outer
+ *   `brush` parameter or an earlier span's brush) - without it, the
+ *   bucket draw paints the brush and the per-span color is invisible
+ *   on the resulting silhouette. Later spans can re-set [brush] in
+ *   the usual per-attribute later-wins way.
  */
 @Immutable
 public data class SpanStyle(
     public val color: Color = Color.Unspecified,
     public val brush: Brush? = null,
+    public val clearBrush: Boolean = false,
 )

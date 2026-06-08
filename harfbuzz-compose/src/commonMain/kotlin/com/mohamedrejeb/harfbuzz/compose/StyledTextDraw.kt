@@ -52,6 +52,7 @@ internal fun DrawScope.drawShapedTextStyledInternal(
     val resolver = PaintResolver(
         spans = styledText.spans,
         clusterEnds = clusterEndArray(measured.paragraph, measured.textLength),
+        clusterText = styledText.text,
         defaultColor = color,
         defaultBrush = brush,
     )
