@@ -227,7 +227,10 @@ public fun DrawScope.drawShapedParagraph(
             originalToJustifiedIndex = line.originalToJustifiedIndex,
             justifiedTextLength = line.measured.textLength,
         )
-        val lineStyledText = StyledText(text = "", spans = sliced)
+        // Pass the line's shaped text (post-justification) so the
+        // styled draw's PaintResolver can detect combining marks at
+        // the same indices the cluster ids point into.
+        val lineStyledText = StyledText(text = line.layout.text, spans = sliced)
         val lineTopLeft = Offset(
             x = topLeft.x + line.xOffset,
             y = topLeft.y + line.top,

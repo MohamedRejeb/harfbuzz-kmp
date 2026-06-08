@@ -41,13 +41,21 @@ internal fun clusterEndArray(
 
 /**
  * Per-glyph paint resolver. Holds the styled-text spans, the cluster
- * trailing-edge index from [clusterEndArray], and the default paint
- * to fall back to. [resolve] is called once per glyph during the
- * styled draw pass.
+ * trailing-edge index from [clusterEndArray], the source / shaped
+ * text the cluster ids reference (used for mark detection in the
+ * mid-cluster-mark override), and the default paint to fall back to.
+ * [resolve] is called once per glyph during the styled draw pass.
+ *
+ * [clusterText] should be the same string the cluster ids point into:
+ * for a single-line draw that's `styledText.text`; for a per-line draw
+ * inside a justified paragraph that's the per-line shaped text
+ * (`LineLayout.text`), so cluster ids and combining-mark probes line
+ * up after Kashida / thin-space insertion.
  */
 internal class PaintResolver(
     private val spans: List<StyleRange>,
     private val clusterEnds: Map<Int, Int>,
+    private val clusterText: String,
     private val defaultColor: Color,
     private val defaultBrush: Brush?,
 ) {
@@ -89,20 +97,98 @@ internal class PaintResolver(
         // (LAM-ALEF, "fi") have only the base glyph and still resolve
         // to clusterStart (the leading codepoint's style), preserving
         // the existing "ligature inherits leading style" behaviour.
-        val sourceIndex = if (glyphIndexInCluster == 0) {
+        val heuristicSource = if (glyphIndexInCluster == 0) {
             clusterStart
         } else {
             clusterEnd - (glyphsInCluster - glyphIndexInCluster)
         }
 
+        // Mid-cluster-mark override: a base ligature spanning leading
+        // AND trailing source codepoints with a combining mark in the
+        // MIDDLE (LAM | FATHA | ALEF in Saudi Regular and similar
+        // faces) absorbs the FATHA's source position into a single
+        // cluster `[clusterStart, clusterEnd)`. The heuristic puts
+        // the mark glyph at `clusterEnd - 1` (a non-mark codepoint),
+        // so a span covering the actual mark codepoint never lights
+        // up. Walk back from the heuristic source to the nearest
+        // combining-mark codepoint INSIDE the cluster; if one exists,
+        // route the glyph there. No walk-back when:
+        //  - glyphIdx == 0 (the base maps to clusterStart unconditionally).
+        //  - heuristicSource is already a mark (1:1 cluster, well-formed
+        //    trailing-mark ligature - case 3 in PaintResolver's docstring).
+        //  - the cluster has no mark before heuristicSource (BAA-dot at
+        //    multi-glyph base case - the body extra collapses on
+        //    clusterStart and we keep that behaviour).
+        val sourceIndex = if (
+            glyphIndexInCluster > 0 &&
+            heuristicSource in (clusterStart + 1) until clusterEnd &&
+            !isCombiningMarkAt(heuristicSource)
+        ) {
+            walkBackToCombiningMark(heuristicSource - 1, clusterStart) ?: heuristicSource
+        } else {
+            heuristicSource
+        }
+
         var color = defaultColor
         var brush = defaultBrush
         // Walk spans in declaration order; per-attribute later-wins.
+        // `clearBrush` drops the running brush BEFORE the same span's
+        // brush re-set, so a span carrying both clearBrush and a brush
+        // ends up with that brush (intuitive: "clear and replace");
+        // a clearBrush-only span just unsets, leaving subsequent spans
+        // free to re-set normally.
         for (s in spans) {
             if (sourceIndex < s.start || sourceIndex >= s.end) continue
+            if (s.style.clearBrush) brush = null
             if (s.style.color != Color.Unspecified) color = s.style.color
             if (s.style.brush != null) brush = s.style.brush
         }
         return ResolvedPaint(color, brush)
     }
+
+    /**
+     * True when the codepoint that *starts* at [index] in [clusterText]
+     * is a combining mark recognised by [isCombiningMarkCodepoint].
+     * Returns false for low-surrogate positions (the codepoint sits at
+     * the high surrogate one slot earlier) so a walk-back stepping by
+     * code units skips them cleanly.
+     */
+    private fun isCombiningMarkAt(index: Int): Boolean {
+        if (index < 0 || index >= clusterText.length) return false
+        val ch = clusterText[index]
+        if (ch.isLowSurrogate()) return false
+        val cp = if (
+            ch.isHighSurrogate() &&
+            index + 1 < clusterText.length &&
+            clusterText[index + 1].isLowSurrogate()
+        ) {
+            0x10000 + ((ch.code - 0xD800) shl 10) + (clusterText[index + 1].code - 0xDC00)
+        } else {
+            ch.code
+        }
+        return isCombiningMarkCodepoint(cp)
+    }
+
+    private fun walkBackToCombiningMark(from: Int, lowerBound: Int): Int? {
+        var i = from
+        while (i >= lowerBound) {
+            if (isCombiningMarkAt(i)) return i
+            i--
+        }
+        return null
+    }
+}
+
+/**
+ * Treat as a combining mark codepoint for the mid-cluster-mark
+ * override in [PaintResolver]. Covers Arabic harakat / Quranic marks
+ * (delegated to [isTashkeelCodepoint]) plus the BMP Combining
+ * Diacritical Marks block (`U+0300..U+036F`) which catches Latin /
+ * Greek / Cyrillic accented-letter ligatures with a mark sandwiched
+ * inside. Other scripts can be added here as cases come up - the
+ * predicate is the only place new ranges need to land.
+ */
+internal fun isCombiningMarkCodepoint(cp: Int): Boolean {
+    if (isTashkeelCodepoint(cp)) return true
+    return cp in 0x0300..0x036F
 }

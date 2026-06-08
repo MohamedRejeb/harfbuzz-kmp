@@ -21,9 +21,21 @@ import androidx.compose.ui.graphics.Color
  * Existing spans are preserved; per the per-attribute later-wins
  * merge rule, a tashkeel color span will override an earlier color
  * span on the same character.
+ *
+ * The generated spans set [SpanStyle.clearBrush] so a tashkeel color
+ * paints solid even when the outer call carries a [Brush] (e.g. a
+ * paragraph-wide gradient). Without this, the bucket draw would
+ * still paint the gradient over every glyph and the per-mark color
+ * would be invisible. Pass [participatesInOuterBrush] = true to opt
+ * back into the v0 behaviour where tashkeel chars participate in the
+ * outer brush.
  */
-public fun StyledText.withTashkeelColor(color: Color): StyledText =
-    appendTashkeelSpans(SpanStyle(color = color))
+public fun StyledText.withTashkeelColor(
+    color: Color,
+    participatesInOuterBrush: Boolean = false,
+): StyledText = appendTashkeelSpans(
+    SpanStyle(color = color, clearBrush = !participatesInOuterBrush),
+)
 
 /** Brush counterpart of [withTashkeelColor]. */
 public fun StyledText.withTashkeelBrush(brush: Brush): StyledText =
