@@ -124,6 +124,95 @@ class AdvanceStretchJustifierTest {
         assertTrue(out.logical.right >= p.logical.right)
     }
 
+    // --- applyLetterSpacing (signed, per-cluster) ---
+
+    @Test
+    fun letterSpacing_identity_for_zero_or_non_finite() {
+        val p = paragraph(advancesPerRun = listOf(listOf(10f, 10f)))
+        assertSame(p, AdvanceStretchJustifier.applyLetterSpacing(p, 0f))
+        assertSame(p, AdvanceStretchJustifier.applyLetterSpacing(p, Float.NaN))
+        assertSame(p, AdvanceStretchJustifier.applyLetterSpacing(p, Float.POSITIVE_INFINITY))
+    }
+
+    @Test
+    fun letterSpacing_identity_for_single_cluster() {
+        val p = paragraph(advancesPerRun = listOf(listOf(10f)))
+        assertSame(p, AdvanceStretchJustifier.applyLetterSpacing(p, 5f))
+    }
+
+    @Test
+    fun letterSpacing_positive_adds_perGap_to_each_gap_last_unchanged() {
+        val p = paragraph(advancesPerRun = listOf(listOf(10f, 10f, 10f, 10f)))
+        val out = AdvanceStretchJustifier.applyLetterSpacing(p, 5f)
+        assertNotSame(p, out)
+        // 4 clusters -> 3 inter-cluster gaps -> +5 each; the last is unchanged.
+        assertEquals(listOf(15f, 15f, 15f, 10f), out.runs.first().positions.map { it.xAdvance })
+        assertEquals(55f, out.totalAdvance, 1e-3f)
+    }
+
+    @Test
+    fun letterSpacing_negative_tightens_gap_last_unchanged() {
+        val p = paragraph(advancesPerRun = listOf(listOf(10f, 10f)))
+        val out = AdvanceStretchJustifier.applyLetterSpacing(p, -3f)
+        assertEquals(listOf(7f, 10f), out.runs.first().positions.map { it.xAdvance })
+        assertEquals(17f, out.totalAdvance, 1e-3f)
+    }
+
+    @Test
+    fun letterSpacing_negative_floored_at_fraction_of_advance() {
+        val p = paragraph(advancesPerRun = listOf(listOf(10f, 10f)))
+        // -100 would invert the glyph; floored at 0.1 * 10 = 1f.
+        val out = AdvanceStretchJustifier.applyLetterSpacing(p, -100f, minClusterAdvanceFraction = 0.1f)
+        assertEquals(listOf(1f, 10f), out.runs.first().positions.map { it.xAdvance })
+    }
+
+    @Test
+    fun letterSpacing_is_per_cluster_not_per_glyph() {
+        // Two glyphs share cluster 0 (base + mark); one glyph is cluster 1.
+        val run = clusteredRun(advances = listOf(10f, 10f, 10f), clusters = listOf(0, 0, 1))
+        val total = run.totalAdvance
+        val p = ShapedParagraph(
+            runs = listOf(run),
+            baseDirection = HbDirection.LTR,
+            totalAdvance = total,
+            ink = HbRect(0f, -10f, total, 0f),
+            logical = HbRect(0f, -10f, total, 2f),
+            logicalToVisual = IntArray(0),
+            visualToLogical = IntArray(0),
+        )
+        val out = AdvanceStretchJustifier.applyLetterSpacing(p, 4f)
+        // Spacing lands only at the cluster 0 -> cluster 1 boundary (glyph index 1).
+        // No spacing inside the shared cluster (glyph 0), none after the last glyph.
+        assertEquals(listOf(10f, 14f, 10f), out.runs.first().positions.map { it.xAdvance })
+        assertEquals(34f, out.totalAdvance, 1e-3f)
+    }
+
+    @Test
+    fun letterSpacing_across_two_runs_spaces_run_boundary() {
+        val p = paragraph(advancesPerRun = listOf(listOf(10f, 10f), listOf(10f, 10f)))
+        val out = AdvanceStretchJustifier.applyLetterSpacing(p, 2f)
+        // 4 clusters across 2 runs -> 3 gaps (including the run boundary); last unchanged.
+        val all = out.runs.flatMap { run -> run.positions.map { it.xAdvance } }
+        assertEquals(listOf(12f, 12f, 12f, 10f), all)
+        assertEquals(46f, out.totalAdvance, 1e-3f)
+    }
+
+    private fun clusteredRun(advances: List<Float>, clusters: List<Int>): ShapedRun {
+        val glyphs = advances.indices.map { GlyphInfo(glyphId = it + 1, cluster = clusters[it], flags = 0) }
+        val positions = advances.map { GlyphPosition(xAdvance = it, yAdvance = 0f, xOffset = 0f, yOffset = 0f) }
+        val total = advances.sum()
+        return ShapedRun(
+            glyphs = glyphs,
+            positions = positions,
+            direction = HbDirection.LTR,
+            script = HbScript.LATIN,
+            totalAdvance = total,
+            ink = HbRect(0f, -10f, total, 0f),
+            logical = HbRect(0f, -10f, total, 2f),
+            font = null,
+        )
+    }
+
     private fun paragraph(
         advancesPerRun: List<List<Float>>,
         yAdvances: List<List<Float>>? = null,

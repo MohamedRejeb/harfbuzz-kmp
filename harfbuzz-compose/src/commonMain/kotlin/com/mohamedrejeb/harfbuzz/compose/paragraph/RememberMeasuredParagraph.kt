@@ -4,12 +4,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import com.mohamedrejeb.harfbuzz.compose.MeasuredText
 import com.mohamedrejeb.harfbuzz.compose.buildMeasuredText
+import com.mohamedrejeb.harfbuzz.compose.buildMeasuredTextWithJustify
+import com.mohamedrejeb.harfbuzz.compose.withLetterSpacing
 import com.mohamedrejeb.harfbuzz.core.HbDirection
 import com.mohamedrejeb.harfbuzz.core.HbFeature
 import com.mohamedrejeb.harfbuzz.core.HbFont
 import com.mohamedrejeb.harfbuzz.core.HbFontStack
 import com.mohamedrejeb.harfbuzz.core.HbLanguage
+import com.mohamedrejeb.harfbuzz.core.paragraph.ArabicTextUtils
 import com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy
 import com.mohamedrejeb.harfbuzz.core.paragraph.LaidOutParagraph
 import com.mohamedrejeb.harfbuzz.core.paragraph.ParagraphAlignment
@@ -42,6 +46,7 @@ public fun rememberMeasuredParagraph(
     lineSpacing: Float = 0f,
     justification: JustificationStrategy = JustificationStrategy.None,
     wordBreak: WordBreak = WordBreak.Phrase,
+    letterSpacing: Float = 0f,
 ): State<MeasuredParagraphLoad> {
     val stack = remember(font) { HbFontStack(font) }
     return rememberMeasuredParagraph(
@@ -56,6 +61,7 @@ public fun rememberMeasuredParagraph(
         lineSpacing = lineSpacing,
         justification = justification,
         wordBreak = wordBreak,
+        letterSpacing = letterSpacing,
     )
 }
 
@@ -78,11 +84,12 @@ public fun rememberMeasuredParagraph(
     lineSpacing: Float = 0f,
     justification: JustificationStrategy = JustificationStrategy.None,
     wordBreak: WordBreak = WordBreak.Phrase,
+    letterSpacing: Float = 0f,
 ): State<MeasuredParagraphLoad> {
     return produceState<MeasuredParagraphLoad>(
         initialValue = MeasuredParagraphLoad.Loading,
         text, fontStack, sizePx, maxWidth, alignment, direction,
-        features, language, lineSpacing, justification, wordBreak,
+        features, language, lineSpacing, justification, wordBreak, letterSpacing,
     ) {
         // Deliberately do NOT reset to Loading here: keep the previous
         // Ready value visible while the new layout runs so size /
@@ -100,6 +107,7 @@ public fun rememberMeasuredParagraph(
                 lineSpacing = lineSpacing,
                 justification = justification,
                 wordBreak = wordBreak,
+                letterSpacing = letterSpacing,
             )
             value = MeasuredParagraphLoad.Ready(measured)
         } catch (ce: CancellationException) {
@@ -130,6 +138,7 @@ public suspend fun buildMeasuredParagraph(
     lineSpacing: Float,
     justification: JustificationStrategy,
     wordBreak: WordBreak = WordBreak.Phrase,
+    letterSpacing: Float = 0f,
 ): MeasuredParagraph {
     if (text.isEmpty() || maxWidth <= 0f) return MeasuredParagraph.empty(fontStack)
 
@@ -144,6 +153,7 @@ public suspend fun buildMeasuredParagraph(
         lineSpacing = lineSpacing,
         justification = justification,
         wordBreak = wordBreak,
+        letterSpacing = letterSpacing,
     )
 
     val lines = layout.lines.map { line ->
@@ -151,17 +161,32 @@ public suspend fun buildMeasuredParagraph(
         // `buildMeasuredText` populates for `drawShapedText`. The shaped
         // text comes straight from the line's `paragraph` (already
         // justified by core if applicable), so no second-rate divergence
-        // between layout and render.
-        val lineSourceText = line.text
-        val measured = buildMeasuredText(
-            text = lineSourceText,
+        // between layout and render. Letter spacing is baked in here so the
+        // rendered glyphs match the letter-spaced advances `layoutParagraph`
+        // already used for line breaking and geometry.
+        val measured = measureParagraphLine(
+            lineText = line.text,
             fontStack = fontStack,
             sizePx = sizePx,
             features = features,
             direction = layout.baseDirection,
             language = language,
+            letterSpacing = letterSpacing,
+            targetAdvance = line.advance,
         )
-        MeasuredLine(measured = measured, layout = line)
+        // Re-derive the alignment offset from the ACTUAL measured ink. Core's
+        // `layoutParagraph` computed `xOffset` from the advance-stretch
+        // geometry, which matches the render for Latin but diverges for Arabic
+        // (rendered as Kashida). Aligning to the rendered ink keeps every line
+        // on the same edge. Zero spacing keeps core's offset untouched.
+        val resolvedLine = if (letterSpacing != 0f && !measured.isEmpty) {
+            line.copy(
+                xOffset = alignedXOffset(measured, layout.maxWidth, layout.alignment, layout.baseDirection),
+            )
+        } else {
+            line
+        }
+        MeasuredLine(measured = measured, layout = resolvedLine)
     }
 
     return MeasuredParagraph(
@@ -175,5 +200,70 @@ public suspend fun buildMeasuredParagraph(
         alignment = layout.alignment,
         fontStack = fontStack,
     )
+}
+
+/**
+ * Shape one paragraph line with [letterSpacing] baked in to match the
+ * letter-spaced advance ([targetAdvance]) `layoutParagraph` already used for
+ * line breaking and geometry:
+ *
+ *  - `0` spacing → plain shape.
+ *  - Positive spacing on Arabic content → Kashida (tatweel) elongation up to
+ *    [targetAdvance], so cursive joins stretch instead of opening gaps.
+ *  - Otherwise (Latin / mixed tracking, or any negative spacing) → uniform
+ *    per-cluster advance delta via [withLetterSpacing].
+ */
+/**
+ * Per-line alignment offset derived from the rendered [measured] ink — the
+ * Compose-side mirror of `ParagraphLayout.computeXOffset`, used to re-align a
+ * letter-spaced / Kashida-justified line to the same edge as its neighbours.
+ * Whitespace-only lines fall back to the advance box.
+ */
+private fun alignedXOffset(
+    measured: MeasuredText,
+    maxWidth: Float,
+    alignment: ParagraphAlignment,
+    baseDirection: HbDirection,
+): Float {
+    val ink = measured.ink
+    val left = if (ink.isEmpty) 0f else ink.left
+    val right = if (ink.isEmpty) measured.advance else ink.right
+    return when (alignment) {
+        ParagraphAlignment.Start -> if (baseDirection == HbDirection.RTL) maxWidth - right else -left
+        ParagraphAlignment.End -> if (baseDirection == HbDirection.RTL) -left else maxWidth - right
+        ParagraphAlignment.Left -> -left
+        ParagraphAlignment.Right -> maxWidth - right
+        ParagraphAlignment.Center -> (maxWidth - left - right) / 2f
+        ParagraphAlignment.Justify -> if (baseDirection == HbDirection.RTL) maxWidth - right else -left
+    }
+}
+
+private suspend fun measureParagraphLine(
+    lineText: String,
+    fontStack: HbFontStack,
+    sizePx: Float,
+    features: List<HbFeature>,
+    direction: HbDirection,
+    language: HbLanguage,
+    letterSpacing: Float,
+    targetAdvance: Float,
+): MeasuredText {
+    if (letterSpacing == 0f) {
+        return buildMeasuredText(lineText, fontStack, sizePx, features, direction, language)
+    }
+    if (letterSpacing > 0f && ArabicTextUtils.isArabicText(lineText)) {
+        return buildMeasuredTextWithJustify(
+            text = lineText,
+            fontStack = fontStack,
+            sizePx = sizePx,
+            features = features,
+            direction = direction,
+            language = language,
+            maxWidth = targetAdvance,
+            justification = JustificationStrategy.KashidaTo(targetAdvance),
+        )
+    }
+    return buildMeasuredText(lineText, fontStack, sizePx, features, direction, language)
+        .withLetterSpacing(letterSpacing)
 }
 

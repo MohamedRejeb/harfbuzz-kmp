@@ -1,6 +1,7 @@
 package com.mohamedrejeb.harfbuzz.core.paragraph
 
 import com.mohamedrejeb.harfbuzz.core.GlyphPosition
+import com.mohamedrejeb.harfbuzz.core.HbDirection
 import com.mohamedrejeb.harfbuzz.core.ShapedParagraph
 import com.mohamedrejeb.harfbuzz.core.ShapedRun
 
@@ -94,6 +95,113 @@ public object AdvanceStretchJustifier {
             positions = newPositions,
             totalAdvance = newTotal,
             logical = run.logical.copy(right = run.logical.left + newTotal),
+        )
+    }
+
+    /**
+     * Default floor for negative letter-spacing: a tightened cluster's
+     * trailing advance is never reduced below this fraction of its original
+     * advance, so glyphs can't fully collapse onto each other (Arabic joins,
+     * narrow Latin). Only ever hit by extreme negative values relative to a
+     * narrow glyph — letter-spacing deltas are normally small versus advance.
+     */
+    public const val DEFAULT_MIN_CLUSTER_ADVANCE_FRACTION: Float = 0.1f
+
+    /**
+     * Apply uniform letter-spacing to [paragraph]: add [perGapPx] to the
+     * trailing advance of every cluster except the paragraph's last (visual
+     * order). Positive widens the inter-cluster gaps (tracking); negative
+     * tightens them. Unlike [stretch] — which distributes a fixed total to
+     * reach a target width and only ever widens — this is a signed per-gap
+     * delta.
+     *
+     * Per-**cluster**, not per-glyph: consecutive glyphs sharing a `cluster`
+     * index (decomposed marks, ligature components) count as one unit, so the
+     * spacing lands between graphemes and never inside a mark stack. Run
+     * boundaries always split clusters.
+     *
+     * Negative tightening is floored per cluster at [minClusterAdvanceFraction]
+     * of the cluster's original trailing advance.
+     *
+     * Bail-outs (return [paragraph] unchanged): [perGapPx] is `0` or
+     * non-finite, the paragraph is empty, it has fewer than two clusters, or
+     * the net delta rounds to zero.
+     *
+     * Recomputes `totalAdvance` and `logical.right`, and approximates the new
+     * `ink` by shifting the trailing edge (LTR) / leading edge (RTL) by the net
+     * advance delta — exact for the dominant LTR tracking case.
+     */
+    public fun applyLetterSpacing(
+        paragraph: ShapedParagraph,
+        perGapPx: Float,
+        minClusterAdvanceFraction: Float = DEFAULT_MIN_CLUSTER_ADVANCE_FRACTION,
+    ): ShapedParagraph {
+        if (perGapPx == 0f || !perGapPx.isFinite()) return paragraph
+        if (paragraph.runs.isEmpty()) return paragraph
+        val lastNonEmptyRun = paragraph.runs.indexOfLast { !it.isEmpty }
+        if (lastNonEmptyRun < 0) return paragraph
+
+        var clusterCount = 0
+        for (run in paragraph.runs) {
+            val glyphs = run.glyphs
+            for (i in glyphs.indices) {
+                if (i == glyphs.lastIndex || glyphs[i].cluster != glyphs[i + 1].cluster) clusterCount++
+            }
+        }
+        if (clusterCount < 2) return paragraph
+
+        var totalDelta = 0f
+        val newRuns = ArrayList<ShapedRun>(paragraph.runs.size)
+        for ((runIndex, run) in paragraph.runs.withIndex()) {
+            if (run.isEmpty) {
+                newRuns.add(run)
+                continue
+            }
+            val glyphs = run.glyphs
+            val newPositions = ArrayList<GlyphPosition>(run.glyphCount)
+            var runDelta = 0f
+            for (i in run.positions.indices) {
+                val p = run.positions[i]
+                val isClusterEnd = i == glyphs.lastIndex || glyphs[i].cluster != glyphs[i + 1].cluster
+                val isGlobalLast = runIndex == lastNonEmptyRun && i == glyphs.lastIndex
+                if (isClusterEnd && !isGlobalLast) {
+                    val target = p.xAdvance + perGapPx
+                    val floored = if (perGapPx < 0f) {
+                        maxOf(target, p.xAdvance * minClusterAdvanceFraction)
+                    } else {
+                        target
+                    }
+                    runDelta += floored - p.xAdvance
+                    newPositions.add(p.copy(xAdvance = floored))
+                } else {
+                    newPositions.add(p)
+                }
+            }
+            val newRunTotal = run.totalAdvance + runDelta
+            totalDelta += runDelta
+            newRuns.add(
+                run.copy(
+                    positions = newPositions,
+                    totalAdvance = newRunTotal,
+                    logical = run.logical.copy(right = run.logical.left + newRunTotal),
+                ),
+            )
+        }
+
+        if (totalDelta == 0f) return paragraph
+
+        val newTotal = paragraph.totalAdvance + totalDelta
+        val newInk = when {
+            paragraph.ink.isEmpty -> paragraph.ink
+            paragraph.baseDirection == HbDirection.RTL ->
+                paragraph.ink.copy(left = paragraph.ink.left - totalDelta)
+            else -> paragraph.ink.copy(right = paragraph.ink.right + totalDelta)
+        }
+        return paragraph.copy(
+            runs = newRuns,
+            totalAdvance = newTotal,
+            ink = newInk,
+            logical = paragraph.logical.copy(right = paragraph.logical.left + newTotal),
         )
     }
 }
