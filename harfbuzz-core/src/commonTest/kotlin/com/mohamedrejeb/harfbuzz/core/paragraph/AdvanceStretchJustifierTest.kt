@@ -141,21 +141,28 @@ class AdvanceStretchJustifierTest {
     }
 
     @Test
-    fun letterSpacing_positive_adds_perGap_to_each_gap_last_unchanged() {
+    fun letterSpacing_positive_total_is_perGap_times_glyphCount() {
         val p = paragraph(advancesPerRun = listOf(listOf(10f, 10f, 10f, 10f)))
         val out = AdvanceStretchJustifier.applyLetterSpacing(p, 5f)
         assertNotSame(p, out)
-        // 4 clusters -> 3 inter-cluster gaps -> +5 each; the last is unchanged.
-        assertEquals(listOf(15f, 15f, 15f, 10f), out.runs.first().positions.map { it.xAdvance })
-        assertEquals(55f, out.totalAdvance, 1e-3f)
+        // iOS parity: total added = perGap(5) * glyphCount(4) = 20, spread over
+        // the 3 inter-cluster gaps; the last glyph is unchanged.
+        assertEquals(60f, out.totalAdvance, 1e-3f)
+        val advances = out.runs.first().positions.map { it.xAdvance }
+        assertEquals(10f, advances[3], 1e-3f)
+        val perGap = 5f * 4f / 3f
+        assertEquals(10f + perGap, advances[0], 1e-3f)
+        assertEquals(10f + perGap, advances[1], 1e-3f)
+        assertEquals(10f + perGap, advances[2], 1e-3f)
     }
 
     @Test
     fun letterSpacing_negative_tightens_gap_last_unchanged() {
         val p = paragraph(advancesPerRun = listOf(listOf(10f, 10f)))
         val out = AdvanceStretchJustifier.applyLetterSpacing(p, -3f)
-        assertEquals(listOf(7f, 10f), out.runs.first().positions.map { it.xAdvance })
-        assertEquals(17f, out.totalAdvance, 1e-3f)
+        // total = -3 * glyphCount(2) = -6 on the single gap; last unchanged.
+        assertEquals(listOf(4f, 10f), out.runs.first().positions.map { it.xAdvance })
+        assertEquals(14f, out.totalAdvance, 1e-3f)
     }
 
     @Test
@@ -181,20 +188,26 @@ class AdvanceStretchJustifierTest {
             visualToLogical = IntArray(0),
         )
         val out = AdvanceStretchJustifier.applyLetterSpacing(p, 4f)
-        // Spacing lands only at the cluster 0 -> cluster 1 boundary (glyph index 1).
-        // No spacing inside the shared cluster (glyph 0), none after the last glyph.
-        assertEquals(listOf(10f, 14f, 10f), out.runs.first().positions.map { it.xAdvance })
-        assertEquals(34f, out.totalAdvance, 1e-3f)
+        // total = perGap(4) * glyphCount(3) = 12, all in the single cluster gap
+        // (cluster 0 -> cluster 1, glyph index 1). No spacing inside the shared
+        // cluster (glyph 0), none after the last glyph.
+        assertEquals(listOf(10f, 22f, 10f), out.runs.first().positions.map { it.xAdvance })
+        assertEquals(42f, out.totalAdvance, 1e-3f)
     }
 
     @Test
     fun letterSpacing_across_two_runs_spaces_run_boundary() {
         val p = paragraph(advancesPerRun = listOf(listOf(10f, 10f), listOf(10f, 10f)))
         val out = AdvanceStretchJustifier.applyLetterSpacing(p, 2f)
-        // 4 clusters across 2 runs -> 3 gaps (including the run boundary); last unchanged.
+        // total = perGap(2) * glyphCount(4) = 8, over 3 gaps (incl. the run
+        // boundary); last unchanged.
+        assertEquals(48f, out.totalAdvance, 1e-3f)
         val all = out.runs.flatMap { run -> run.positions.map { it.xAdvance } }
-        assertEquals(listOf(12f, 12f, 12f, 10f), all)
-        assertEquals(46f, out.totalAdvance, 1e-3f)
+        assertEquals(10f, all[3], 1e-3f)
+        val perGap = 2f * 4f / 3f
+        assertEquals(10f + perGap, all[0], 1e-3f)
+        assertEquals(10f + perGap, all[1], 1e-3f)
+        assertEquals(10f + perGap, all[2], 1e-3f)
     }
 
     private fun clusteredRun(advances: List<Float>, clusters: List<Int>): ShapedRun {

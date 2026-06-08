@@ -108,17 +108,19 @@ public object AdvanceStretchJustifier {
     public const val DEFAULT_MIN_CLUSTER_ADVANCE_FRACTION: Float = 0.1f
 
     /**
-     * Apply uniform letter-spacing to [paragraph]: add [perGapPx] to the
-     * trailing advance of every cluster except the paragraph's last (visual
-     * order). Positive widens the inter-cluster gaps (tracking); negative
-     * tightens them. Unlike [stretch] — which distributes a fixed total to
-     * reach a target width and only ever widens — this is a signed per-gap
-     * delta.
+     * Apply uniform letter-spacing to [paragraph]. [perGapPx] is the iOS-style
+     * per-glyph `characterSpacing`: the total width added to the line is
+     * `perGapPx * glyphCount` (matching CoreText's kern / CTLineCreateJustified
+     * total of `characterSpacing * glyphCount`). Positive widens (tracking);
+     * negative tightens. Unlike [stretch] — which distributes a fixed total to
+     * reach a target width and only ever widens — this is a signed delta.
      *
-     * Per-**cluster**, not per-glyph: consecutive glyphs sharing a `cluster`
-     * index (decomposed marks, ligature components) count as one unit, so the
-     * spacing lands between graphemes and never inside a mark stack. Run
-     * boundaries always split clusters.
+     * That total is spread evenly across the inter-**cluster** gaps, not per
+     * glyph: consecutive glyphs sharing a `cluster` index (decomposed marks,
+     * ligature components) count as one unit, so the spacing lands between
+     * graphemes and never inside a mark stack. Run boundaries split clusters.
+     * The paragraph's last cluster gets no trailing delta, so its leading edge
+     * shifts by the full total — keeping `ink` and `totalAdvance` in step.
      *
      * Negative tightening is floored per cluster at [minClusterAdvanceFraction]
      * of the cluster's original trailing advance.
@@ -141,14 +143,23 @@ public object AdvanceStretchJustifier {
         val lastNonEmptyRun = paragraph.runs.indexOfLast { !it.isEmpty }
         if (lastNonEmptyRun < 0) return paragraph
 
+        var glyphCount = 0
         var clusterCount = 0
         for (run in paragraph.runs) {
             val glyphs = run.glyphs
+            glyphCount += glyphs.size
             for (i in glyphs.indices) {
                 if (i == glyphs.lastIndex || glyphs[i].cluster != glyphs[i + 1].cluster) clusterCount++
             }
         }
-        if (clusterCount < 2) return paragraph
+        val gaps = clusterCount - 1
+        if (gaps < 1) return paragraph
+
+        // iOS parity: the total width added to a line is `perGapPx * glyphCount`
+        // (CoreText's `characterSpacing * glyphCount`, applied via kern /
+        // CTLineCreateJustifiedLine). Spread that total across the inter-cluster
+        // gaps so marks/ligature components stay put.
+        val perGapDelta = perGapPx * glyphCount / gaps
 
         var totalDelta = 0f
         val newRuns = ArrayList<ShapedRun>(paragraph.runs.size)
@@ -165,8 +176,8 @@ public object AdvanceStretchJustifier {
                 val isClusterEnd = i == glyphs.lastIndex || glyphs[i].cluster != glyphs[i + 1].cluster
                 val isGlobalLast = runIndex == lastNonEmptyRun && i == glyphs.lastIndex
                 if (isClusterEnd && !isGlobalLast) {
-                    val target = p.xAdvance + perGapPx
-                    val floored = if (perGapPx < 0f) {
+                    val target = p.xAdvance + perGapDelta
+                    val floored = if (perGapDelta < 0f) {
                         maxOf(target, p.xAdvance * minClusterAdvanceFraction)
                     } else {
                         target

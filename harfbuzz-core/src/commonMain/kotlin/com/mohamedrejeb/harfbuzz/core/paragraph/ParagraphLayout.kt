@@ -363,13 +363,14 @@ private suspend fun HbFontStack.bisectByGrapheme(
     // Walk from largest to smallest grapheme boundary; first one whose
     // cumulative advance fits the budget wins. Boundaries are sorted
     // ascending so this is at most |boundaries| comparisons in the
-    // worst case (single tall grapheme). Letter spacing adds one gap per
-    // grapheme already on the line (boundary index `i` ⇒ `i - 1` interior
-    // gaps), so a wider/narrower spaced prefix cuts at the right place.
+    // worst case (single tall grapheme). Letter spacing adds ~`letterSpacing`
+    // per glyph on the line; boundary index `i` ≈ glyphs in the prefix, so the
+    // spaced prefix (`characterSpacing * glyphCount` parity) cuts at the right
+    // place.
     var chosenLocal = -1
     for (i in boundaries.size - 1 downTo 1) {
         val b = boundaries[i]
-        if (cumulative[b] + letterSpacing * (i - 1) <= maxWidth) {
+        if (cumulative[b] + letterSpacing * i <= maxWidth) {
             chosenLocal = b
             break
         }
@@ -436,33 +437,18 @@ private fun perIndexCumulativeAdvance(shape: ShapedParagraph, textLen: Int): Flo
 }
 
 /**
- * Number of grapheme-ish clusters in [shape]: maximal adjacent glyphs that
- * share a `cluster` index within a run; run boundaries always split. Sizes
- * the inter-cluster letter-spacing contribution for line-break fitting.
- */
-private fun clusterCount(shape: ShapedParagraph): Int {
-    var n = 0
-    for (run in shape.runs) {
-        val glyphs = run.glyphs
-        for (i in glyphs.indices) {
-            if (i == glyphs.lastIndex || glyphs[i].cluster != glyphs[i + 1].cluster) n++
-        }
-    }
-    return n
-}
-
-/**
  * [shape]'s advance with uniform [letterSpacing] folded in for line-break
- * fitting — one gap per inter-cluster boundary (clusters − 1). Signed:
- * negative letter spacing reports a narrower line. A single-cluster line is
- * never spaced. Matches the advance produced by
- * [AdvanceStretchJustifier.applyLetterSpacing] (modulo the negative floor),
- * so wrap decisions agree with the baked per-line geometry.
+ * fitting. iOS parity: the added width is `letterSpacing * glyphCount`
+ * (CoreText's `characterSpacing * glyphCount`). Signed: negative letter spacing
+ * reports a narrower line. Matches the total produced by
+ * [AdvanceStretchJustifier.applyLetterSpacing] (modulo the negative floor), so
+ * wrap decisions agree with the baked per-line geometry.
  */
 private fun effectiveLineAdvance(shape: ShapedParagraph, letterSpacing: Float): Float {
     if (letterSpacing == 0f) return shape.totalAdvance
-    val gaps = (clusterCount(shape) - 1).coerceAtLeast(0)
-    return shape.totalAdvance + letterSpacing * gaps
+    var glyphCount = 0
+    for (run in shape.runs) glyphCount += run.glyphCount
+    return shape.totalAdvance + letterSpacing * glyphCount
 }
 
 /**
