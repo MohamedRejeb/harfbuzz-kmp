@@ -210,6 +210,74 @@ class AdvanceStretchJustifierTest {
         assertEquals(10f + perGap, all[2], 1e-3f)
     }
 
+    // ── fillToWidth (exact paragraph justification) ──────────────────────────
+
+    @Test
+    fun fillToWidth_identity_when_target_at_or_below_current() {
+        val p = paragraph(advancesPerRun = listOf(listOf(10f, 10f, 10f)))
+        assertSame(p, AdvanceStretchJustifier.fillToWidth(p, 30f))
+        assertSame(p, AdvanceStretchJustifier.fillToWidth(p, 20f))
+        assertSame(p, AdvanceStretchJustifier.fillToWidth(p, Float.NaN))
+    }
+
+    @Test
+    fun fillToWidth_lands_exactly_on_target_across_cluster_gaps() {
+        val p = paragraph(advancesPerRun = listOf(listOf(10f, 10f, 10f, 10f)))
+        val out = AdvanceStretchJustifier.fillToWidth(p, 50f)
+        assertNotSame(p, out)
+        // Total lands on the target exactly; the last glyph's trailing edge is untouched.
+        assertEquals(50f, out.totalAdvance)
+        val advances = out.runs.first().positions.map { it.xAdvance }
+        assertEquals(10f, advances[3], 1e-3f)
+        assertEquals(10f + 10f / 3f, advances[0], 1e-3f)
+        assertEquals(10f + 10f / 3f, advances[1], 1e-3f)
+        assertEquals(10f + 10f / 3f, advances[2], 1e-3f)
+        // The fp remainder is absorbed by the last gap so the sum is exact.
+        assertEquals(50f, advances.sum(), 1e-3f)
+    }
+
+    @Test
+    fun fillToWidth_distributes_only_into_explicit_gaps() {
+        val p = paragraph(advancesPerRun = listOf(listOf(10f, 10f, 10f, 10f)))
+        // Only glyph index 1 is elastic (e.g. the single inter-word space).
+        val out = AdvanceStretchJustifier.fillToWidth(p, 50f, elasticGlyphIndices = intArrayOf(1))
+        // 10px of fill, all onto glyph 1's trailing gap.
+        assertEquals(listOf(10f, 20f, 10f, 10f), out.runs.first().positions.map { it.xAdvance })
+        assertEquals(50f, out.totalAdvance)
+    }
+
+    @Test
+    fun fillToWidth_updates_ink_trailing_edge_ltr() {
+        val p = paragraph(advancesPerRun = listOf(listOf(10f, 10f))) // ink right = 20
+        val out = AdvanceStretchJustifier.fillToWidth(p, 40f)
+        // +20 of fill extends the LTR ink right edge by the same amount.
+        assertEquals(40f, out.ink.right, 1e-3f)
+        assertEquals(0f, out.ink.left, 1e-3f)
+    }
+
+    @Test
+    fun fillToWidth_rtl_grows_trailing_ink_edge_like_ltr() {
+        val run = run(advances = listOf(10f, 10f)).copy(direction = HbDirection.RTL)
+        val total = run.totalAdvance
+        val p = ShapedParagraph(
+            runs = listOf(run),
+            baseDirection = HbDirection.RTL,
+            totalAdvance = total,
+            ink = HbRect(0f, -10f, total, 0f),
+            logical = HbRect(0f, -10f, total, 2f),
+            logicalToVisual = IntArray(0),
+            visualToLogical = IntArray(0),
+        )
+        val out = AdvanceStretchJustifier.fillToWidth(p, 40f)
+        assertEquals(40f, out.totalAdvance, 1e-3f)
+        // RTL content also occupies pen-local [0, advance] (RTL-ness is in glyph
+        // order + alignment, not negative pen coords), so filling grows ink.right
+        // — NOT ink.left. The old left-edge behaviour mis-positioned RTL justified
+        // lines (caught by JustifyScreenshotTest).
+        assertEquals(0f, out.ink.left, 1e-3f)
+        assertEquals(40f, out.ink.right, 1e-3f)
+    }
+
     private fun clusteredRun(advances: List<Float>, clusters: List<Int>): ShapedRun {
         val glyphs = advances.indices.map { GlyphInfo(glyphId = it + 1, cluster = clusters[it], flags = 0) }
         val positions = advances.map { GlyphPosition(xAdvance = it, yAdvance = 0f, xOffset = 0f, yOffset = 0f) }
