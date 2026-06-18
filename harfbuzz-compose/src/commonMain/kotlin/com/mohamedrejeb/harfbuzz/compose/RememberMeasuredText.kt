@@ -180,6 +180,98 @@ public suspend fun buildMeasuredTextWithJustify(
     return shaped.withOriginalMapping(originalTextLength = text.length, mapping = mapping)
 }
 
+/**
+ * Justify [text] to fill EXACTLY [targetWidthPx], never exceeding it — the
+ * exact-fill alternative to [buildMeasuredTextWithJustify]'s quantized
+ * connector insertion. Two stages, CoreText-style:
+ *
+ *  1. **Coarse** (script-authentic, never over target): Arabic content is
+ *     widened with Kashida (tatweel) via [JustificationStrategy.KashidaTo],
+ *     whose floored count keeps the line at or below the target; non-Arabic
+ *     content is left at its natural shape.
+ *  2. **Fine** (exact): the remaining gap is distributed geometrically with
+ *     [AdvanceStretchJustifier.fillToWidth] so the advance lands on
+ *     [targetWidthPx] precisely. Latin fills into inter-word spaces; Arabic
+ *     distributes the (sub-Kashida) residual across cluster gaps.
+ *
+ * Because the fine pass is continuous (not connector-quantized) the line never
+ * overshoots and a paragraph of these lines ends up uniform width — fixing the
+ * "short justified line wider than the longest line" and "lines differ in
+ * width" artifacts of pure Kashida / thin-space insertion.
+ *
+ * Returns the natural shape unchanged when [text] is empty, [targetWidthPx] is
+ * non-finite / non-positive, or the natural advance already meets the target.
+ */
+public suspend fun buildMeasuredTextJustified(
+    text: String,
+    fontStack: HbFontStack,
+    sizePx: Float,
+    features: List<HbFeature>,
+    direction: HbDirection,
+    language: HbLanguage,
+    targetWidthPx: Float,
+): MeasuredText {
+    val natural = buildMeasuredText(text, fontStack, sizePx, features, direction, language)
+    if (
+        text.isEmpty() ||
+        !targetWidthPx.isFinite() ||
+        targetWidthPx <= 0f ||
+        natural.advance >= targetWidthPx
+    ) return natural
+
+    val isArabic = ArabicTextUtils.isArabicText(text)
+
+    // Stage 1 — coarse fill, guaranteed at/under target.
+    val coarse: MeasuredText = if (isArabic) {
+        val kashida = buildMeasuredTextWithJustify(
+            text = text,
+            fontStack = fontStack,
+            sizePx = sizePx,
+            features = features,
+            direction = direction,
+            language = language,
+            maxWidth = targetWidthPx,
+            justification = JustificationStrategy.KashidaTo(targetWidthPx),
+        )
+        // Guard against a font whose in-context Kashida runs wider than the
+        // standalone estimate (would push past target): fall back to natural,
+        // the geometric pass below then fills cleanly.
+        if (kashida.advance > targetWidthPx) natural else kashida
+    } else {
+        natural
+    }
+    if (coarse.advance >= targetWidthPx) return coarse
+
+    // Stage 2 — exact geometric close. Latin distributes into word gaps; Arabic
+    // passes null so the small residual spreads across cluster gaps.
+    val elastic = if (isArabic) null else wordGapGlyphIndices(coarse, text)
+    val filled = AdvanceStretchJustifier.fillToWidth(coarse.paragraph, targetWidthPx, elastic)
+    return if (filled === coarse.paragraph) coarse else coarse.withFilledParagraph(filled)
+}
+
+/**
+ * Global (visual, run-concatenated) indices of [measured]'s inter-word space
+ * glyphs — the elastic gaps for Latin word-justify. The line's last glyph and
+ * trailing whitespace are excluded so the fill lands between words, not after
+ * the final one. Returns `null` when there is no inter-word space (single
+ * token), so [AdvanceStretchJustifier.fillToWidth] falls back to cluster gaps.
+ */
+private fun wordGapGlyphIndices(measured: MeasuredText, text: String): IntArray? {
+    val runs = measured.paragraph.runs
+    val lastNonEmptyRun = runs.indexOfLast { !it.isEmpty }
+    val indices = ArrayList<Int>()
+    var globalIndex = 0
+    for ((runIndex, run) in runs.withIndex()) {
+        for (i in run.glyphs.indices) {
+            val isGlobalLast = runIndex == lastNonEmptyRun && i == run.glyphs.lastIndex
+            val ch = text.getOrNull(run.glyphs[i].cluster)
+            if (!isGlobalLast && ch != null && ch.isWhitespace()) indices.add(globalIndex)
+            globalIndex++
+        }
+    }
+    return if (indices.isEmpty()) null else indices.toIntArray()
+}
+
 private fun isStaleHbHandle(cause: Throwable): Boolean =
     cause is IllegalStateException && cause.message == "hb object disposed"
 

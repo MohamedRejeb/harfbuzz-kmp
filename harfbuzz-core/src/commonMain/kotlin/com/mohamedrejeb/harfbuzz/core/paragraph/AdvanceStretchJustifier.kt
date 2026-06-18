@@ -202,11 +202,14 @@ public object AdvanceStretchJustifier {
         if (totalDelta == 0f) return paragraph
 
         val newTotal = paragraph.totalAdvance + totalDelta
-        val newInk = when {
-            paragraph.ink.isEmpty -> paragraph.ink
-            paragraph.baseDirection == HbDirection.RTL ->
-                paragraph.ink.copy(left = paragraph.ink.left - totalDelta)
-            else -> paragraph.ink.copy(right = paragraph.ink.right + totalDelta)
+        // Content occupies pen-local [0, totalAdvance] for both LTR and RTL (RTL-ness
+        // is in glyph order + alignment xOffset, not negative pen coords), so the
+        // spacing extends the trailing (right/pen-end) edge for both. Mirroring it to
+        // `ink.left` for RTL leaves `ink.right` stale and mis-positions the line.
+        val newInk = if (paragraph.ink.isEmpty) {
+            paragraph.ink
+        } else {
+            paragraph.ink.copy(right = paragraph.ink.right + totalDelta)
         }
         return paragraph.copy(
             runs = newRuns,
@@ -214,5 +217,124 @@ public object AdvanceStretchJustifier {
             ink = newInk,
             logical = paragraph.logical.copy(right = paragraph.logical.left + newTotal),
         )
+    }
+
+    /**
+     * Fill [paragraph] to EXACTLY [targetWidthPx] by distributing the missing
+     * width across elastic gaps. The exact-fill counterpart to [stretch], used
+     * by paragraph justification:
+     *
+     *  - The total advance lands on [targetWidthPx] exactly — the floating-point
+     *    remainder goes to the last elastic gap — so a justified line never
+     *    overshoots the target (the bug where a short line grew past the longest
+     *    line). [stretch], by contrast, leaves `ink` stale and is kept only for
+     *    the arc `AdvanceStretchTo` path.
+     *  - Width is distributed only into [elasticGlyphIndices] when provided: the
+     *    global (visual, run-concatenated) indices of the glyphs whose trailing
+     *    gap may grow — e.g. inter-word space glyphs for Latin word-justify.
+     *    When `null` / empty it falls back to every cluster-final glyph except
+     *    the line's last, matching [applyLetterSpacing]'s gap model (used for the
+     *    sub-unit residual close after Kashida fill).
+     *  - `totalAdvance`, `logical.right` and `ink` are all updated (trailing edge
+     *    by the added width — LTR right, RTL left) so frame sizing reflects it.
+     *
+     * Returns [paragraph] unchanged when it is empty, [targetWidthPx] is
+     * non-finite, the target is at/below the current advance (never shrink), or
+     * there is no elastic gap to grow.
+     */
+    public fun fillToWidth(
+        paragraph: ShapedParagraph,
+        targetWidthPx: Float,
+        elasticGlyphIndices: IntArray? = null,
+    ): ShapedParagraph {
+        if (paragraph.runs.isEmpty()) return paragraph
+        if (!targetWidthPx.isFinite()) return paragraph
+        val current = paragraph.totalAdvance
+        val extra = targetWidthPx - current
+        if (extra <= 0f) return paragraph
+
+        val elastic: Set<Int> =
+            if (elasticGlyphIndices != null && elasticGlyphIndices.isNotEmpty()) {
+                elasticGlyphIndices.toHashSet()
+            } else {
+                clusterEndGlobalIndices(paragraph).toHashSet()
+            }
+        val lastElastic = elastic.maxOrNull() ?: return paragraph
+        val perGap = extra / elastic.size
+
+        var added = 0f
+        var globalIndex = 0
+        val newRuns = ArrayList<ShapedRun>(paragraph.runs.size)
+        for (run in paragraph.runs) {
+            if (run.isEmpty) {
+                newRuns.add(run)
+                continue
+            }
+            val newPositions = ArrayList<GlyphPosition>(run.glyphCount)
+            var runDelta = 0f
+            for (i in run.positions.indices) {
+                val p = run.positions[i]
+                if (globalIndex in elastic) {
+                    // Last elastic gap absorbs the fp remainder so the sum is exact.
+                    val add = if (globalIndex == lastElastic) extra - added else perGap
+                    added += add
+                    runDelta += add
+                    newPositions.add(p.copy(xAdvance = p.xAdvance + add))
+                } else {
+                    newPositions.add(p)
+                }
+                globalIndex++
+            }
+            val newRunTotal = run.totalAdvance + runDelta
+            newRuns.add(
+                run.copy(
+                    positions = newPositions,
+                    totalAdvance = newRunTotal,
+                    logical = run.logical.copy(right = run.logical.left + newRunTotal),
+                ),
+            )
+        }
+
+        // Both LTR and RTL content occupies pen-local [0, totalAdvance] (the
+        // shaped glyphs advance left-to-right by xAdvance regardless of script —
+        // RTL-ness lives in glyph order + the alignment xOffset, not in negative
+        // pen coords; that's why `computeXOffset` right-aligns RTL via
+        // `maxWidth - ink.right`). Filling extends the trailing (right/pen-end)
+        // edge for both, so grow `ink.right`. Mirroring it to `ink.left` for RTL
+        // leaves `ink.right` stale and mis-positions the line by `extra`.
+        val newInk = if (paragraph.ink.isEmpty) {
+            paragraph.ink
+        } else {
+            paragraph.ink.copy(right = paragraph.ink.right + extra)
+        }
+        return paragraph.copy(
+            runs = newRuns,
+            totalAdvance = targetWidthPx,
+            ink = newInk,
+            logical = paragraph.logical.copy(right = paragraph.logical.left + targetWidthPx),
+        )
+    }
+
+    /**
+     * Global (visual, run-concatenated) indices of every cluster-final glyph
+     * except the paragraph's very last — the default elastic gaps for
+     * [fillToWidth] when no explicit word-gap indices are passed. A glyph is
+     * cluster-final when the next glyph starts a new cluster or it ends a run;
+     * the global-last is excluded so the trailing edge stays put.
+     */
+    private fun clusterEndGlobalIndices(paragraph: ShapedParagraph): IntArray {
+        val lastNonEmptyRun = paragraph.runs.indexOfLast { !it.isEmpty }
+        val result = ArrayList<Int>()
+        var globalIndex = 0
+        for ((runIndex, run) in paragraph.runs.withIndex()) {
+            val glyphs = run.glyphs
+            for (i in glyphs.indices) {
+                val isClusterEnd = i == glyphs.lastIndex || glyphs[i].cluster != glyphs[i + 1].cluster
+                val isGlobalLast = runIndex == lastNonEmptyRun && i == glyphs.lastIndex
+                if (isClusterEnd && !isGlobalLast) result.add(globalIndex)
+                globalIndex++
+            }
+        }
+        return result.toIntArray()
     }
 }

@@ -186,6 +186,42 @@ public fun DrawScope.drawShapedText(
 }
 
 /**
+ * Draw ONLY [measured]'s drop shadow — the blurred, offset silhouette
+ * under [shadow]'s color — without painting the glyphs themselves.
+ *
+ * Lets a caller that paints fill and stroke in separate passes cast a
+ * single shadow from the fill+stroke union (call once with [Fill] for the
+ * solid interior, once with a [Stroke] for the outer edge) instead of
+ * routing each pass through [drawShapedText] with a `shadow` argument —
+ * which would also re-stamp the glyph silhouette that the real fill /
+ * stroke then covers. [style] picks the silhouette: [Fill] for the body,
+ * [Stroke] to grow it to the stroke's outer edge.
+ *
+ * Pen origin matches [drawShapedText]: the line baseline sits at
+ * `topLeft.y + measured.baseline`, shifted by `shadow.offset`.
+ */
+public fun DrawScope.drawShapedTextShadow(
+    measured: MeasuredText,
+    shadow: Shadow,
+    topLeft: Offset = Offset.Zero,
+    alpha: Float = 1f,
+    style: DrawStyle = Fill,
+    blendMode: BlendMode = DrawScope.DefaultBlendMode,
+) {
+    if (measured.isEmpty || shadow.color == Color.Transparent) return
+    drawShadowPass(
+        measured = measured,
+        penX = topLeft.x + shadow.offset.x,
+        penY = topLeft.y + measured.baseline + shadow.offset.y,
+        shadow = shadow,
+        alpha = alpha,
+        style = style,
+        blendMode = blendMode,
+        spacingScale = 1f,
+    )
+}
+
+/**
  * Layout-aware overload: places [measured] within an [availableWidth]
  * slot and applies single-line [alignment] + [overflow]. The text is
  * assumed to be already justified (use [rememberMeasuredText] with a

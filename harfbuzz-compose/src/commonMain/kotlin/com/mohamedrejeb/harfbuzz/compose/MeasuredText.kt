@@ -337,6 +337,21 @@ public class MeasuredText internal constructor(
     private var cachedContourSampleStep: Float = Float.NaN
     private var cachedContourSamples: List<FloatArray>? = null
 
+    /**
+     * Single-slot cache for the most-recent arc-warped silhouette
+     * ([drawArcText]). The warp is the expensive per-frame step (one
+     * cos/sin pair per contour sample plus a fresh multi-thousand-segment
+     * [Path] build); the inputs only change when the arc geometry or
+     * font size does. Keying on [ArcWarpKey] lets the multiple paint
+     * passes a caller issues per frame (shadow, stroke, fill) share one
+     * warp, and lets static frames (move/rotate, unrelated layers
+     * animating) reuse the previous frame's warp instead of rebuilding it.
+     *
+     * Reset whenever [cachedArcWarpKey] no longer matches the request.
+     */
+    internal var cachedArcWarpKey: ArcWarpKey? = null
+    internal var cachedArcWarpPath: Path? = null
+
     private fun buildSilhouettePath(): Path {
         val out = Path()
         if (paragraph.isEmpty) return out
@@ -538,6 +553,49 @@ internal fun MeasuredText.withStretchedParagraph(
         fontStack = fontStack,
         sizePx = sizePx,
         ink = ink,
+        logical = newLogical,
+        baseline = baseline,
+        advance = newAdvance,
+        ascent = ascent,
+        descent = descent,
+        lineGap = lineGap,
+        textLength = textLength,
+        flippedPathsByFont = flippedPathsByFont,
+        rawPathsByFont = rawPathsByFont,
+        colorLayersByFont = colorLayersByFont,
+        paintTreesByFont = paintTreesByFont,
+        svgGlyphCachesByFont = svgGlyphCachesByFont,
+        hasColorGlyphs = hasColorGlyphs,
+        hasColorPaintTree = hasColorPaintTree,
+        hasColorSvg = hasColorSvg,
+        originalToJustifiedIndex = originalToJustifiedIndex,
+        shapedTextLength = shapedTextLength,
+    )
+}
+
+/**
+ * Replace [this]'s paragraph with [filled] — the output of
+ * [AdvanceStretchJustifier.fillToWidth] — and rebuild the cached
+ * measurements **including `ink`**. Unlike [withStretchedParagraph],
+ * `fillToWidth` updates the paragraph's ink (trailing edge by the added
+ * width), so the rebuilt box reflects the justified width and frame
+ * sizing stays correct. Per-glyph outline / color caches are reused by
+ * reference because the fill only changes advances, not glyph identity.
+ */
+internal fun MeasuredText.withFilledParagraph(filled: ShapedParagraph): MeasuredText {
+    val newAdvance = filled.totalAdvance
+    val newLogical = Rect(
+        left = 0f,
+        top = -ascent,
+        right = newAdvance,
+        bottom = descent + lineGap,
+    )
+    val newInk = if (filled.ink.isEmpty) ink else filled.ink.toComposeRect()
+    return MeasuredText(
+        paragraph = filled,
+        fontStack = fontStack,
+        sizePx = sizePx,
+        ink = newInk,
         logical = newLogical,
         baseline = baseline,
         advance = newAdvance,

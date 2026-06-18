@@ -8,6 +8,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.DrawStyle
 import androidx.compose.ui.graphics.drawscope.Fill
@@ -121,25 +123,22 @@ public fun DrawScope.drawArcText(
         totalAdvance = measured.paragraph.totalAdvance,
     ) ?: return
 
-    val contours = measured.contourSamples(sampleStep)
-    if (contours.isEmpty()) return
-
-    val warped = warpContoursToArc(contours, arc)
+    val key = ArcWarpKey(
+        centerX = center.x,
+        centerY = center.y,
+        radiusPx = radiusPx,
+        startAngleDeg = startAngleDeg,
+        sweepAngleDeg = sweepAngleDeg,
+        startOffset = startOffset,
+        sampleStep = sampleStep,
+        side = side,
+        alignment = alignment,
+        overflow = overflow,
+    )
+    val warped = measured.warpedArcPath(arc, key, sampleStep) ?: return
 
     if (shadow != null) {
-        val shadowPaint = Paint().apply {
-            this.color = shadow.color
-            this.alpha = alpha
-            this.blendMode = blendMode
-            applyDrawStyleToPaint(this, style)
-            configureShadowBlur(this, shadow.blurRadius)
-        }
-        drawIntoCanvas { canvas ->
-            canvas.save()
-            canvas.translate(shadow.offset.x, shadow.offset.y)
-            canvas.drawPath(warped, shadowPaint)
-            canvas.restore()
-        }
+        drawWarpedArcShadow(warped, shadow, alpha, style, blendMode)
     }
 
     drawPath(
@@ -350,6 +349,290 @@ public fun DrawScope.drawArcText(
         drawArcBucket(warped, paint, alpha, style, blendMode)
     }
 }
+
+/**
+ * Layered arc draw: warp [measured] onto the arc ONCE, then paint
+ * shadow, stroke, and fill from that single warped silhouette. Replaces
+ * the caller pattern of issuing four separate [drawArcText] calls
+ * (shadow-fill companion, shadow-stroke companion, stroke, fill) — each
+ * of which re-warped — for text that has a stroke and/or drop shadow.
+ *
+ * Paint order matches a standard text stack: drop shadow at the bottom
+ * (cast from the fill+stroke union so it stays solid AND reaches the
+ * stroke's outer edge), then the stroke, then the fill on top.
+ *
+ * Fill and stroke each take either a solid [Color] or a [Brush] (brush
+ * wins when non-null); a brush flows across the whole run as one body via
+ * [drawCombinedBrushPath]. Leave [strokeWidth] at 0 (or both stroke
+ * paints unset) for fill-only text.
+ *
+ * The warp is memoised on [measured] (see [MeasuredText.cachedArcWarpPath]),
+ * so the three passes here share one warp and consecutive frames with
+ * unchanged arc geometry reuse it too.
+ *
+ * Color glyphs (emoji / COLR / SVG) can't collapse into one silhouette,
+ * so they fall back to per-pass [drawArcText] (the rare arc-emoji case);
+ * fill/stroke brushes don't reach color glyphs there, matching
+ * [drawArcText]'s existing color-glyph escape.
+ */
+public fun DrawScope.drawArcTextLayered(
+    measured: MeasuredText,
+    center: Offset,
+    radiusPx: Float,
+    startAngleDeg: Float,
+    sweepAngleDeg: Float,
+    fillColor: Color = Color.Black,
+    fillBrush: Brush? = null,
+    fillAlpha: Float = 1f,
+    strokeColor: Color = Color.Unspecified,
+    strokeBrush: Brush? = null,
+    strokeWidth: Float = 0f,
+    strokeAlpha: Float = 1f,
+    strokeCap: StrokeCap = StrokeCap.Round,
+    strokeJoin: StrokeJoin = StrokeJoin.Round,
+    shadow: Shadow? = null,
+    blendMode: BlendMode = DrawScope.DefaultBlendMode,
+    side: TextOnPathSide = TextOnPathSide.Above,
+    alignment: TextOnPathAlignment = TextOnPathAlignment.Center,
+    overflow: TextOnPathOverflow = TextOnPathOverflow.Compress,
+    startOffset: Float = 0f,
+    sampleStep: Float = 0.5f,
+) {
+    if (measured.isEmpty || radiusPx <= 0f || sweepAngleDeg == 0f) return
+
+    val hasStroke = strokeWidth > 0f &&
+        (strokeBrush != null || strokeColor != Color.Unspecified)
+    val hasShadow = shadow != null && shadow.color != Color.Transparent
+
+    // Color glyphs can't be a single warped silhouette — paint them with
+    // the per-pass uniform drawArcText (stroke under fill, shadow on the
+    // bottom-most pass). Rare on arcs; brushes don't reach color glyphs.
+    if (measured.hasColorGlyphs) {
+        if (hasStroke) {
+            drawArcText(
+                measured = measured, center = center, radiusPx = radiusPx,
+                startAngleDeg = startAngleDeg, sweepAngleDeg = sweepAngleDeg,
+                color = if (strokeColor == Color.Unspecified) Color.Black else strokeColor,
+                alpha = strokeAlpha,
+                style = Stroke(strokeWidth, cap = strokeCap, join = strokeJoin),
+                blendMode = blendMode, side = side, alignment = alignment,
+                overflow = overflow, startOffset = startOffset,
+                sampleStep = sampleStep, shadow = shadow,
+            )
+        }
+        drawArcText(
+            measured = measured, center = center, radiusPx = radiusPx,
+            startAngleDeg = startAngleDeg, sweepAngleDeg = sweepAngleDeg,
+            color = fillColor, alpha = fillAlpha, style = Fill, blendMode = blendMode,
+            side = side, alignment = alignment, overflow = overflow,
+            startOffset = startOffset, sampleStep = sampleStep,
+            shadow = if (hasStroke) null else shadow,
+        )
+        return
+    }
+
+    val arc = ArcWarpContext.computeOrNull(
+        center = center,
+        radiusPx = radiusPx,
+        startAngleDeg = startAngleDeg,
+        sweepAngleDeg = sweepAngleDeg,
+        startOffset = startOffset,
+        side = side,
+        alignment = alignment,
+        overflow = overflow,
+        totalAdvance = measured.paragraph.totalAdvance,
+    ) ?: return
+    val key = ArcWarpKey(
+        centerX = center.x,
+        centerY = center.y,
+        radiusPx = radiusPx,
+        startAngleDeg = startAngleDeg,
+        sweepAngleDeg = sweepAngleDeg,
+        startOffset = startOffset,
+        sampleStep = sampleStep,
+        side = side,
+        alignment = alignment,
+        overflow = overflow,
+    )
+    val warped = measured.warpedArcPath(arc, key, sampleStep) ?: return
+
+    val strokeStyle = if (hasStroke) {
+        Stroke(width = strokeWidth, cap = strokeCap, join = strokeJoin)
+    } else null
+
+    // Drop shadow from the fill+stroke union: the Fill blur keeps the
+    // interior solid; the Stroke blur pushes the silhouette out to the
+    // stroke's outer edge so a thick stroke's shadow isn't overrun.
+    // Drawn at full alpha (the shadow's own opacity lives in its color).
+    if (hasShadow && shadow != null) {
+        drawWarpedArcShadow(warped, shadow, alpha = 1f, style = Fill, blendMode = blendMode)
+        if (strokeStyle != null) {
+            drawWarpedArcShadow(warped, shadow, alpha = 1f, style = strokeStyle, blendMode = blendMode)
+        }
+    }
+
+    // Stroke beneath the fill.
+    if (strokeStyle != null) {
+        if (strokeBrush != null) {
+            drawCombinedBrushPath(warped, strokeBrush, strokeAlpha, strokeStyle, blendMode)
+        } else {
+            drawPath(
+                path = warped,
+                color = strokeColor,
+                alpha = strokeAlpha,
+                style = strokeStyle,
+                blendMode = blendMode,
+            )
+        }
+    }
+
+    // Fill on top.
+    if (fillBrush != null) {
+        drawCombinedBrushPath(warped, fillBrush, fillAlpha, Fill, blendMode)
+    } else {
+        drawPath(
+            path = warped,
+            color = fillColor,
+            alpha = fillAlpha,
+            style = Fill,
+            blendMode = blendMode,
+        )
+    }
+}
+
+/**
+ * Draw ONLY the arc drop shadow — the blurred, offset warped silhouette
+ * under [shadow]'s color — without painting the glyphs. The arc twin of
+ * [drawShapedTextShadow], for callers that paint fill and stroke in
+ * separate passes and want one union shadow underneath (call once with
+ * [Fill] for the solid body, once with a [Stroke] for the outer edge)
+ * instead of routing each pass through [drawArcText] with a `shadow`
+ * argument, which would re-warp and re-stamp the covered glyph silhouette.
+ *
+ * Reuses the per-frame warp cache ([MeasuredText.cachedArcWarpPath]), so
+ * the shadow passes and the following fill/stroke passes (same arc
+ * geometry) all share a single warp.
+ *
+ * Color glyphs contribute only what their monochrome base outline carries
+ * (emoji without one cast no shadow), matching the rest of the warp path.
+ */
+public fun DrawScope.drawArcTextShadow(
+    measured: MeasuredText,
+    center: Offset,
+    radiusPx: Float,
+    startAngleDeg: Float,
+    sweepAngleDeg: Float,
+    shadow: Shadow,
+    alpha: Float = 1f,
+    style: DrawStyle = Fill,
+    blendMode: BlendMode = DrawScope.DefaultBlendMode,
+    side: TextOnPathSide = TextOnPathSide.Above,
+    alignment: TextOnPathAlignment = TextOnPathAlignment.Center,
+    overflow: TextOnPathOverflow = TextOnPathOverflow.Compress,
+    startOffset: Float = 0f,
+    sampleStep: Float = 0.5f,
+) {
+    if (measured.isEmpty || radiusPx <= 0f || sweepAngleDeg == 0f) return
+    if (shadow.color == Color.Transparent) return
+
+    val arc = ArcWarpContext.computeOrNull(
+        center = center,
+        radiusPx = radiusPx,
+        startAngleDeg = startAngleDeg,
+        sweepAngleDeg = sweepAngleDeg,
+        startOffset = startOffset,
+        side = side,
+        alignment = alignment,
+        overflow = overflow,
+        totalAdvance = measured.paragraph.totalAdvance,
+    ) ?: return
+    val key = ArcWarpKey(
+        centerX = center.x,
+        centerY = center.y,
+        radiusPx = radiusPx,
+        startAngleDeg = startAngleDeg,
+        sweepAngleDeg = sweepAngleDeg,
+        startOffset = startOffset,
+        sampleStep = sampleStep,
+        side = side,
+        alignment = alignment,
+        overflow = overflow,
+    )
+    val warped = measured.warpedArcPath(arc, key, sampleStep) ?: return
+    drawWarpedArcShadow(warped, shadow, alpha, style, blendMode)
+}
+
+/**
+ * Stamp [warped] under a paint configured with [shadow]'s color, [alpha],
+ * [blendMode], [style] (Fill/Stroke) and Gaussian blur, translated by
+ * `shadow.offset`. Shared by [drawArcText], [drawArcTextLayered] and
+ * [drawArcTextShadow].
+ */
+private fun DrawScope.drawWarpedArcShadow(
+    warped: Path,
+    shadow: Shadow,
+    alpha: Float,
+    style: DrawStyle,
+    blendMode: BlendMode,
+) {
+    val shadowPaint = Paint().apply {
+        this.color = shadow.color
+        this.alpha = alpha
+        this.blendMode = blendMode
+        applyDrawStyleToPaint(this, style)
+        configureShadowBlur(this, shadow.blurRadius)
+    }
+    drawIntoCanvas { canvas ->
+        canvas.save()
+        canvas.translate(shadow.offset.x, shadow.offset.y)
+        canvas.drawPath(warped, shadowPaint)
+        canvas.restore()
+    }
+}
+
+/**
+ * Warp [measured]'s baseline silhouette onto [arc], memoised on the
+ * [MeasuredText] under [key] so repeated passes within a frame (shadow /
+ * stroke / fill) and consecutive frames with unchanged geometry reuse the
+ * path instead of re-sampling and re-warping. Returns null when the glyph
+ * silhouette has no contours.
+ */
+private fun MeasuredText.warpedArcPath(
+    arc: ArcWarpContext,
+    key: ArcWarpKey,
+    sampleStep: Float,
+): Path? {
+    cachedArcWarpPath?.let { if (cachedArcWarpKey == key) return it }
+    val contours = contourSamples(sampleStep)
+    if (contours.isEmpty()) {
+        cachedArcWarpKey = null
+        cachedArcWarpPath = null
+        return null
+    }
+    val warped = warpContoursToArc(contours, arc)
+    cachedArcWarpKey = key
+    cachedArcWarpPath = warped
+    return warped
+}
+
+/**
+ * Value key for [MeasuredText.cachedArcWarpPath]. Captures every per-draw
+ * input to [ArcWarpContext] / [warpContoursToArc]; the glyph contours and
+ * total advance are intrinsic to the owning [MeasuredText] so they don't
+ * need keying.
+ */
+internal data class ArcWarpKey(
+    val centerX: Float,
+    val centerY: Float,
+    val radiusPx: Float,
+    val startAngleDeg: Float,
+    val sweepAngleDeg: Float,
+    val startOffset: Float,
+    val sampleStep: Float,
+    val side: TextOnPathSide,
+    val alignment: TextOnPathAlignment,
+    val overflow: TextOnPathOverflow,
+)
 
 /** Pre-computed scalar inputs the per-sample warp loop needs. */
 private class ArcWarpContext(
