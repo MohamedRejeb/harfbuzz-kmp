@@ -148,7 +148,8 @@ private fun DrawScope.drawShadowAlongPath(
 ) {
     val paint = Paint().apply {
         color = shadow.color
-        this.alpha = alpha
+        // Keep the shadow's own opacity (color.alpha) — assigning alpha alone drops it.
+        this.alpha = alpha * shadow.color.alpha
         this.blendMode = blendMode
         applyDrawStyleToPaint(this, style)
         configureShadowBlur(this, shadow.blurRadius)

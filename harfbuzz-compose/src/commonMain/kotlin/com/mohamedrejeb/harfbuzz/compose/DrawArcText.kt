@@ -315,7 +315,8 @@ public fun DrawScope.drawArcText(
     if (shadow != null) {
         val shadowPaint = Paint().apply {
             this.color = shadow.color
-            this.alpha = alpha
+            // Keep the shadow's own opacity (color.alpha) — assigning alpha alone drops it.
+            this.alpha = alpha * shadow.color.alpha
             this.blendMode = blendMode
             applyDrawStyleToPaint(this, style)
             configureShadowBlur(this, shadow.blurRadius)
@@ -577,7 +578,8 @@ private fun DrawScope.drawWarpedArcShadow(
 ) {
     val shadowPaint = Paint().apply {
         this.color = shadow.color
-        this.alpha = alpha
+        // Keep the shadow's own opacity (color.alpha) — assigning alpha alone drops it.
+        this.alpha = alpha * shadow.color.alpha
         this.blendMode = blendMode
         applyDrawStyleToPaint(this, style)
         configureShadowBlur(this, shadow.blurRadius)
