@@ -64,14 +64,23 @@ public suspend fun HbFontStack.layoutParagraph(
     var cursor = 0
     var bIdx = nextBreakIndex(breaks, cursor)
 
+    // Resolve the base direction per hard-wrapped paragraph (text between line
+    // terminators), like Compose: the first line of a paragraph resolves it
+    // (AUTO = first strong char) and the paragraph's remaining soft-wrapped lines
+    // inherit it. Without this a paragraph whose first line is RTL would force a
+    // following LTR line (e.g. "08:00 PM") to RTL and reorder it.
+    var atParagraphStart = true
+    var paragraphDir = baseDirection
+
     while (cursor < text.length) {
+        val lineDir = if (atParagraphStart) baseDirection else paragraphDir
         val pick = if (wordBreak == WordBreak.AnyChar) {
             pickLineAnyChar(
                 text = text,
                 sizePx = sizePx,
                 cursor = cursor,
                 maxWidth = maxWidth,
-                baseDirection = baseDirection,
+                baseDirection = lineDir,
                 features = features,
                 language = language,
                 letterSpacing = letterSpacing,
@@ -84,13 +93,16 @@ public suspend fun HbFontStack.layoutParagraph(
                 breaks = breaks,
                 startIdx = bIdx,
                 maxWidth = maxWidth,
-                baseDirection = baseDirection,
+                baseDirection = lineDir,
                 features = features,
                 language = language,
                 wordBreak = wordBreak,
                 letterSpacing = letterSpacing,
             )
         }
+        // The first line of the paragraph just resolved its direction; pin it so
+        // the paragraph's remaining lines share it.
+        if (atParagraphStart) paragraphDir = pick.shape.baseDirection
         rawLines.add(
             RawLine(
                 start = cursor,
@@ -102,6 +114,7 @@ public suspend fun HbFontStack.layoutParagraph(
             ),
         )
         cursor = pick.end
+        atParagraphStart = pick.endedByHardBreak
         bIdx = if (pick.nextProbeIdx >= 0) pick.nextProbeIdx else nextBreakIndex(breaks, cursor)
     }
 
@@ -140,7 +153,10 @@ public suspend fun HbFontStack.layoutParagraph(
         }
         val advance = shape.totalAdvance
         val lineInk = if (shape.ink.isEmpty) HbRect.EMPTY else shape.ink
-        val xOff = computeXOffset(advance, lineInk, maxWidth, alignment, resolvedBase)
+        // Align each line against its OWN (paragraph) direction, not the whole
+        // text's, so a Start/End aligned line sits on the correct edge for its
+        // script.
+        val xOff = computeXOffset(advance, lineInk, maxWidth, alignment, shape.baseDirection)
         lines.add(
             LineLayout(
                 paragraph = shape,

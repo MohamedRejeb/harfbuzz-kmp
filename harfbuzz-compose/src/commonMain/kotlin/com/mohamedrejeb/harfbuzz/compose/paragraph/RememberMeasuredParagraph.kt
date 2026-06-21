@@ -169,7 +169,9 @@ public suspend fun buildMeasuredParagraph(
             fontStack = fontStack,
             sizePx = sizePx,
             features = features,
-            direction = layout.baseDirection,
+            // Each line's own (paragraph) direction, not the whole text's, so a
+            // hard-wrapped line in the other script keeps its reading order.
+            direction = line.paragraph.baseDirection,
             language = language,
             letterSpacing = letterSpacing,
             targetAdvance = line.advance,
@@ -181,7 +183,7 @@ public suspend fun buildMeasuredParagraph(
         // on the same edge. Zero spacing keeps core's offset untouched.
         val resolvedLine = if (letterSpacing != 0f && !measured.isEmpty) {
             line.copy(
-                xOffset = alignedXOffset(measured, layout.maxWidth, layout.alignment, layout.baseDirection),
+                xOffset = alignedXOffset(measured, layout.maxWidth, layout.alignment, line.paragraph.baseDirection),
             )
         } else {
             line
