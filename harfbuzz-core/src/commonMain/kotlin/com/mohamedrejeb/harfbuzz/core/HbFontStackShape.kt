@@ -84,10 +84,10 @@ public suspend fun HbFontStack.shapeParagraph(
         return ShapedParagraph.EMPTY.copy(baseDirection = baseDirection)
     }
 
-    val resolvedDir = when (baseDirection) {
-        HbDirection.AUTO -> if (bidiRuns.firstOrNull()?.isRtl == true) HbDirection.RTL else HbDirection.LTR
-        else -> baseDirection
-    }
+    // UAX#9 P2/P3: the paragraph direction is the first STRONG character's, not
+    // the first resolved run's (a leading number run would mis-resolve a line
+    // like "08:00 PM" or "١٢٣ مرحبا").
+    val resolvedDir = resolver.baseDirectionOf(text, baseDirection)
 
     // Match the visual-ordering pragma in ShapingHelpers: for an RTL base
     // we reverse the logical-order list. Proper UAX #9 L1-L4 visual

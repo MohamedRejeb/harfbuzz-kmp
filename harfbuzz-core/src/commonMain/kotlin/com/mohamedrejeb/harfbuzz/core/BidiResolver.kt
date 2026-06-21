@@ -64,6 +64,27 @@ public class BidiResolver {
         return groupRuns(levels)
     }
 
+    /**
+     * UAX#9 P2/P3 paragraph base direction: the FIRST strong character decides
+     * it (L → LTR, R/AL → RTL); numbers and neutrals are skipped. Falls back to
+     * LTR when there is no strong character. A non-AUTO [baseDirection] is
+     * returned unchanged.
+     *
+     * Use this for "what direction is this line?" rather than the first resolved
+     * run — a line that opens with a number (e.g. "08:00 PM" or "١٢٣ مرحبا") has
+     * a leading number run whose direction is not the paragraph's.
+     */
+    public fun baseDirectionOf(
+        text: String,
+        baseDirection: HbDirection = HbDirection.AUTO,
+    ): HbDirection {
+        if (baseDirection != HbDirection.AUTO) return baseDirection
+        return when (firstStrongDirection(text)) {
+            BidiClass.R, BidiClass.AL -> HbDirection.RTL
+            else -> HbDirection.LTR
+        }
+    }
+
     // ── Step 1: classification ──────────────────────────────────────────
 
     private fun classifyAll(text: String): IntArray {
