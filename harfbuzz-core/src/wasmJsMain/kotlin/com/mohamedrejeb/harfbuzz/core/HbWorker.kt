@@ -22,7 +22,16 @@ internal object HbWorker {
     private val readyDeferred: CompletableDeferred<Unit> = CompletableDeferred()
     private var bootstrapStarted: Boolean = false
 
+    /**
+     * Latched when the worker fires a fatal load/runtime error (see
+     * [handleWorkerError]). Once set, the singleton stays failed: there is no
+     * live worker to recover the per-handle registries from, so every call
+     * fails fast with a clear error instead of parking forever.
+     */
+    private var failure: Throwable? = null
+
     suspend fun ensureWorkerReady() {
+        failure?.let { throw it }
         if (readyDeferred.isCompleted) {
             // Surface any prior init failure to subsequent callers.
             readyDeferred.await()
@@ -46,6 +55,7 @@ internal object HbWorker {
 
     /** Send an RPC and await the reply. */
     suspend fun send(type: String, payload: JsAny?, transfer: JsAny? = null): JsAny? {
+        failure?.let { throw it }
         val id = nextRequestId++
         val deferred = CompletableDeferred<JsAny?>()
         pending[id] = deferred
@@ -80,8 +90,25 @@ internal object HbWorker {
         }
     }
 
+    /**
+     * Hooked by the JS-side `worker.onerror` / `onmessageerror`. A worker-level
+     * fault (script 404, syntax error, missing dependency, structured-clone
+     * failure) means no reply will ever arrive for in-flight RPCs. Reject every
+     * pending await so callers get a clear error instead of an infinite hang,
+     * and latch [failure] so later calls fail fast.
+     */
+    private fun handleWorkerError(message: String) {
+        if (failure != null) return
+        val ex = HbException(message)
+        failure = ex
+        val inflight = pending.values.toList()
+        pending.clear()
+        inflight.forEach { it.completeExceptionally(ex) }
+        if (!readyDeferred.isCompleted) readyDeferred.completeExceptionally(ex)
+    }
+
     private fun spawnWorker() {
-        worker = createWorker(::handleReply)
+        worker = createWorker(::handleReply, ::handleWorkerError)
     }
 
     private fun requireWorker(): JsAny =
@@ -90,32 +117,47 @@ internal object HbWorker {
 
 @JsFun(
     """
-    (handleReply) => {
-        const w = new Worker(new URL('./hb-worker.js', self.location.href));
+    (handleReply, handleWorkerError) => {
+        // Resolve the worker script against the document base URL (which honours
+        // <base href>) rather than self.location.href. Under a deep SPA route
+        // like /template/8979, self.location.href resolves './hb-worker.js' to
+        // '/template/hb-worker.js' (404) even though the asset is served from
+        // the site root; document.baseURI respects the page's <base href="/">
+        // and resolves to '/hb-worker.js'. Falls back to self.location.href
+        // when no document is present (e.g. a nested worker realm).
+        const base = (typeof document !== 'undefined' && document.baseURI)
+            ? document.baseURI
+            : self.location.href;
+        const w = new Worker(new URL('./hb-worker.js', base));
         w.onmessage = (e) => {
             const { id, type, payload } = e.data;
             const isError = type === 'error';
             const message = isError ? (payload && payload.message) : null;
             handleReply(id, isError, payload, message);
         };
-        // Without these, a worker load/runtime failure (script syntax error,
-        // missing dependency, structured-clone failure) silently hangs every
-        // pending RPC because no reply ever arrives. Surface to console so
-        // the page operator can diagnose; pending awaits stay parked, which
-        // is the right behaviour for an unrecoverable worker fault.
+        // A worker load/runtime failure (script 404, syntax error, missing
+        // dependency, structured-clone failure) fires here with no reply for
+        // any in-flight RPC. Surface to console for diagnosis AND notify the
+        // Kotlin side so it can fail every pending await instead of leaving
+        // them parked forever (which shows up as an infinite loading spinner).
         w.onerror = (e) => {
+            const msg = (e && e.message) ? e.message : 'worker script failed to load';
             console.error('[kotlin-harfbuzz] worker error:',
-                e && e.message ? e.message : e,
-                e && e.filename, e && e.lineno);
+                msg, e && e.filename, e && e.lineno);
+            handleWorkerError('HarfBuzz worker error: ' + msg);
         };
         w.onmessageerror = (e) => {
             console.error('[kotlin-harfbuzz] worker message error:', e);
+            handleWorkerError('HarfBuzz worker message error');
         };
         return w;
     }
     """
 )
-private external fun createWorker(handleReply: (Long, Boolean, JsAny?, String?) -> Unit): JsAny
+private external fun createWorker(
+    handleReply: (Long, Boolean, JsAny?, String?) -> Unit,
+    handleWorkerError: (String) -> Unit,
+): JsAny
 
 @JsFun(
     """
