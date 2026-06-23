@@ -251,7 +251,10 @@ public fun buildBaselineGlyphPath(measured: MeasuredText): Path {
             val pos = run.positions[i]
             val gp = flipped?.get(run.glyphs[i].glyphId)
             if (gp != null) {
-                src.addPath(gp, offset = Offset(penX + pos.xOffset, -pos.yOffset))
+                src.addPath(
+                    gp.stretchInkHorizontally(pos.kashidaAddedWidth()),
+                    offset = Offset(penX + pos.xOffset, -pos.yOffset),
+                )
             }
             penX += pos.xAdvance
         }

@@ -629,12 +629,44 @@ internal fun DrawScope.drawShapedTextInternal(
                     glyphId = gid,
                     drawX = drawX,
                     drawY = drawY,
+                    addedWidth = pos.kashidaAddedWidth(),
                     color = color,
                     alpha = alpha,
                     style = style,
                     blendMode = blendMode,
                     combinedPath = combinedBrushPath,
                 )
+            } else if (pos.xScale != 1f) {
+                // Continuous Kashida: a tatweel is monochrome, so draw its outline
+                // directly with its ink stretched (side bearings preserved) rather
+                // than uniformly scaling the canvas — uniform scaling amplifies the
+                // glyph's side bearings into a growing gap on fonts whose tatweel
+                // ink is narrower than its advance.
+                val monoPath = caches.flippedPaths[gid]
+                if (monoPath != null) {
+                    translate(left = drawX, top = drawY) {
+                        drawPath(
+                            path = monoPath.stretchInkHorizontally(pos.kashidaAddedWidth()),
+                            color = color,
+                            alpha = alpha,
+                            style = style,
+                            blendMode = blendMode,
+                        )
+                    }
+                } else {
+                    translate(left = drawX, top = drawY) {
+                        drawOneGlyphAtOrigin(
+                            runFont = runFont,
+                            sizePx = measured.sizePx,
+                            caches = caches,
+                            glyphId = gid,
+                            color = color,
+                            alpha = alpha,
+                            style = style,
+                            blendMode = blendMode,
+                        )
+                    }
+                }
             } else {
                 translate(left = drawX, top = drawY) {
                     drawOneGlyphAtOrigin(
@@ -766,7 +798,7 @@ private fun accumulateLineSilhouette(
             val drawX = localX + pos.xOffset
             val drawY = localY - pos.yOffset
             val p = flipped[gid]
-            if (p != null) target.addPath(p, Offset(drawX, drawY))
+            if (p != null) target.addPath(p.stretchInkHorizontally(pos.kashidaAddedWidth()), Offset(drawX, drawY))
             localX += pos.xAdvance * spacingScale
             localY += pos.yAdvance
         }
@@ -921,7 +953,7 @@ internal fun DrawScope.drawShadowPass(
                 if (path != null) {
                     canvas.save()
                     canvas.translate(drawX, drawY)
-                    canvas.drawPath(path, paint)
+                    canvas.drawPath(path.stretchInkHorizontally(pos.kashidaAddedWidth()), paint)
                     canvas.restore()
                 }
                 localX += pos.xAdvance * spacingScale
@@ -1037,6 +1069,7 @@ private fun DrawScope.drawOneGlyphForBrush(
     glyphId: Int,
     drawX: Float,
     drawY: Float,
+    addedWidth: Float,
     color: Color,
     alpha: Float,
     style: DrawStyle,
@@ -1086,13 +1119,13 @@ private fun DrawScope.drawOneGlyphForBrush(
                     )
                 }
             } else {
-                combinedPath.addPath(layerPath, Offset(drawX, drawY))
+                combinedPath.addPath(layerPath.stretchInkHorizontally(addedWidth), Offset(drawX, drawY))
             }
         }
     } else {
         val path = caches.flippedPaths[glyphId]
         if (path != null) {
-            combinedPath.addPath(path, Offset(drawX, drawY))
+            combinedPath.addPath(path.stretchInkHorizontally(addedWidth), Offset(drawX, drawY))
         }
     }
 }

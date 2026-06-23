@@ -12,6 +12,7 @@ import com.mohamedrejeb.harfbuzz.core.HbRect
 import com.mohamedrejeb.harfbuzz.core.RecordedPaintOp
 import com.mohamedrejeb.harfbuzz.core.ShapedParagraph
 import com.mohamedrejeb.harfbuzz.core.paragraph.AdvanceStretchJustifier
+import com.mohamedrejeb.harfbuzz.core.paragraph.KashidaStretchJustifier
 
 /**
  * The Compose-side bundle of everything needed to render a piece of text
@@ -133,6 +134,64 @@ public class MeasuredText internal constructor(
     public val font: HbFont get() = fontStack.primary
 
     public val isEmpty: Boolean get() = paragraph.isEmpty
+
+    /**
+     * Continuous Kashida: stretch the tatweel (U+0640) glyphs already present
+     * in this shaped line so its advance lands on [targetWidthPx] exactly, via
+     * [KashidaStretchJustifier]. [shapedText] is the exact string this line was
+     * shaped from (with the kashida already inserted) — used to identify the
+     * kashida glyphs by source character, which survives GSUB substitution.
+     *
+     * Returns this instance unchanged when no stretch applies (no kashida
+     * glyphs, target unreachable, or scale already 1). The result reuses this
+     * line's per-glyph outline/color caches and font metrics — only the
+     * paragraph and its derived box are recomputed.
+     */
+    public fun stretchKashidaToWidth(targetWidthPx: Float, shapedText: String): MeasuredText =
+        withParagraph(KashidaStretchJustifier.stretchToWidth(paragraph, targetWidthPx, shapedText))
+
+    /**
+     * A copy of this [MeasuredText] wrapping a glyph-compatible [newParagraph]
+     * (same glyphs/fonts/size, only advances/positions/`xScale` differ). The
+     * per-glyph outline & color caches, SVG caches, and font metrics are reused
+     * as-is; the paragraph and its derived box (`advance`, `ink`, `logical`)
+     * are recomputed, and the lazy path caches reset by being a fresh instance.
+     *
+     * Returns this instance unchanged when [newParagraph] is the same object.
+     */
+    internal fun withParagraph(newParagraph: ShapedParagraph): MeasuredText {
+        if (newParagraph === paragraph) return this
+        val newAdvance = newParagraph.totalAdvance
+        val newInk = if (newParagraph.ink.isEmpty) {
+            Rect.Zero
+        } else {
+            Rect(newParagraph.ink.left, newParagraph.ink.top, newParagraph.ink.right, newParagraph.ink.bottom)
+        }
+        val newLogical = Rect(0f, -ascent, newAdvance, descent + lineGap)
+        return MeasuredText(
+            paragraph = newParagraph,
+            fontStack = fontStack,
+            sizePx = sizePx,
+            ink = newInk,
+            logical = newLogical,
+            baseline = baseline,
+            advance = newAdvance,
+            ascent = ascent,
+            descent = descent,
+            lineGap = lineGap,
+            textLength = textLength,
+            flippedPathsByFont = flippedPathsByFont,
+            rawPathsByFont = rawPathsByFont,
+            colorLayersByFont = colorLayersByFont,
+            paintTreesByFont = paintTreesByFont,
+            svgGlyphCachesByFont = svgGlyphCachesByFont,
+            hasColorGlyphs = hasColorGlyphs,
+            hasColorPaintTree = hasColorPaintTree,
+            hasColorSvg = hasColorSvg,
+            originalToJustifiedIndex = originalToJustifiedIndex,
+            shapedTextLength = shapedTextLength,
+        )
+    }
     /** `ascent + descent + lineGap` - the recommended row height for one line. */
     public val lineHeight: Float get() = ascent + descent + lineGap
 
@@ -369,7 +428,7 @@ public class MeasuredText internal constructor(
                 val drawY = localY - pos.yOffset
                 val p = pathsForFont[gid]
                 if (p != null) {
-                    out.addPath(p, Offset(drawX, drawY))
+                    out.addPath(p.stretchInkHorizontally(pos.kashidaAddedWidth()), Offset(drawX, drawY))
                 }
                 localX += pos.xAdvance
                 localY += pos.yAdvance

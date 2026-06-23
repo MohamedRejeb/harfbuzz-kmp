@@ -16,12 +16,23 @@ public data class GlyphInfo(
  * Per-glyph positioning - an entry from `hb_buffer_get_glyph_positions`.
  * Values are in pixel space when shaping was called with a positive
  * `sizePx`; otherwise they are in font design units.
+ *
+ * [xScale] is a render-time horizontal scale applied to this glyph's
+ * outline, anchored at the glyph's pen origin (x = 0), independent of
+ * shaping. It defaults to `1f` (no scaling) so every existing shaping
+ * path is unaffected. It exists for continuous Kashida (tatweel, U+0640)
+ * elongation: a single tatweel glyph can be stretched horizontally to an
+ * arbitrary, fractional width instead of inserting whole tatweel glyphs.
+ * When set, [xAdvance] must already reflect the scaled width
+ * (`naturalAdvance * xScale`) so pen advancement and total-advance sums
+ * stay consistent with what is drawn.
  */
 public data class GlyphPosition(
     public val xAdvance: Float,
     public val yAdvance: Float,
     public val xOffset: Float,
     public val yOffset: Float,
+    public val xScale: Float = 1f,
 )
 
 /**
