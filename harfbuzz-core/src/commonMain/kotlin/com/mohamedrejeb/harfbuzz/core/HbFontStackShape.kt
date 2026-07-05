@@ -41,30 +41,35 @@ public suspend fun HbFontStack.shapeParagraph(
     // no cluster walk. Plain UI labels (the 90% case) skip the entire
     // paragraph orchestration pipeline.
     //
-    // Why ignore the system resolver here: it's only consulted when primary
-    // produces notdefs, which boring text against any Latin-capable primary
-    // never does. The edge case (Arabic-only primary + English text + system
-    // resolver enabled) is user error; we accept losing the system fallback
-    // there as the cost of the fast path firing in real Compose apps where
-    // `HbFontStack(font)` defaults to `SystemFallback.Match()`.
+    // The probe shape is only kept when the primary resolved every glyph
+    // (or there is no system resolver, in which case the full path would
+    // reproduce the same notdefs anyway). A primary with no Latin coverage
+    // (e.g. an Arabic-only decorative font) shaping English text produces
+    // all-notdef output; returning that early would silently skip the
+    // system fallback that the non-boring path consults.
     if (
         text.isNotEmpty() &&
         fallbacks.isEmpty() &&
         baseDirection != HbDirection.RTL &&
         isBoringText(text)
     ) {
-        return HbBuffer().use { buf ->
+        val fast = HbBuffer().use { buf ->
             val run = shapeOnce(text, primary, sizePx, isRtl = false, language, features, buf)
-            ShapedParagraph(
-                runs = listOf(run),
-                baseDirection = HbDirection.LTR,
-                totalAdvance = run.totalAdvance,
-                ink = run.ink,
-                logical = HbRect(0f, 0f, run.totalAdvance, 0f),
-                logicalToVisual = identityIntArray(text.length),
-                visualToLogical = identityIntArray(text.length),
-            )
+            if (systemResolver != null && run.glyphs.any { it.glyphId == 0 }) {
+                null // Primary lacks coverage - fall through to the full path.
+            } else {
+                ShapedParagraph(
+                    runs = listOf(run),
+                    baseDirection = HbDirection.LTR,
+                    totalAdvance = run.totalAdvance,
+                    ink = run.ink,
+                    logical = HbRect(0f, 0f, run.totalAdvance, 0f),
+                    logicalToVisual = identityIntArray(text.length),
+                    visualToLogical = identityIntArray(text.length),
+                )
+            }
         }
+        if (fast != null) return fast
     }
 
     if (fallbacks.isEmpty() && systemResolver == null) {

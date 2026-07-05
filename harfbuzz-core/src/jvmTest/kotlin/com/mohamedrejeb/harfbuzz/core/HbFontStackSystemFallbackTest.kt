@@ -121,6 +121,44 @@ class HbFontStackSystemFallbackTest {
     }
 
     @Test
+    fun `boring Latin-only text with non-Latin primary resolves via system layer`() = runBlocking {
+        // Regression test: "Hello" is boring text (all code units < U+0590),
+        // which routes through the single-shape fast path. With a primary
+        // that has no Latin coverage (NotoColorEmoji stands in for the
+        // Arabic-only decorative fonts that hit this in production), the
+        // fast path used to return all-notdef output without ever
+        // consulting the system resolver - Latin-only text rendered as
+        // nothing while mixed Latin+Arabic text (not boring) rendered fine.
+        if (!emojiFile.exists()) return@runBlocking
+        val emojiFace = HbFace.from { bytes(emojiFile.readBytes()) }
+        val emoji = emojiFace.toFont()
+        try {
+            val stack = TestableHbFontStack(
+                primary = emoji,
+                fallbacks = emptyList(),
+                systemResolver = JvmSystemFontResolver(SystemFallback.Match(), listOf(robotoFile)),
+            )
+            try {
+                val paragraph = stack.shapeParagraph("Hello", sizePx = 24f, baseDirection = HbDirection.AUTO)
+                paragraph.runs.forEach { run ->
+                    assertTrue(
+                        run.glyphs.all { it.glyphId != 0 },
+                        "expected zero notdefs after system fallback, run was $run",
+                    )
+                }
+                val latinFont = paragraph.runs.firstOrNull()?.font
+                assertNotNull(latinFont, "Latin clusters should resolve via the system layer")
+                assertNotSame<HbFont?>(emoji, latinFont)
+            } finally {
+                stack.close()
+            }
+        } finally {
+            emoji.close()
+            emojiFace.close()
+        }
+    }
+
+    @Test
     fun `system None bypasses resolver entirely`() = runBlocking {
         // Even without explicit fallbacks, system=None means Arabic stays as
         // notdef glyphs from Roboto - the resolver is never consulted.
