@@ -222,12 +222,17 @@ internal class AndroidSystemFontResolver(
         loaded.add(l)
     }
 
-    private fun key(codepoint: Int, italic: Boolean): Long =
-        (codepoint.toLong() and 0xFFFFFFFFL) or (if (italic) 1L shl 32 else 0L)
+    private fun key(codepoint: Int, italic: Boolean, emojiPresentation: Boolean): Long =
+        (codepoint.toLong() and 0xFFFFFFFFL) or
+            (if (italic) 1L shl 32 else 0L) or
+            (if (emojiPresentation) 1L shl 33 else 0L)
 
-    override suspend fun fontFor(codepoint: Int): HbFont? {
+    override suspend fun fontFor(codepoint: Int): HbFont? =
+        fontFor(codepoint, emojiPresentation = false)
+
+    override suspend fun fontFor(codepoint: Int, emojiPresentation: Boolean): HbFont? {
         val italic = style.italic
-        val cacheKey = key(codepoint, italic)
+        val cacheKey = key(codepoint, italic, emojiPresentation)
         if (resolved.containsKey(cacheKey)) {
             val cached = resolved[cacheKey] ?: return null
             return sizelessFont(cached)
@@ -238,7 +243,10 @@ internal class AndroidSystemFontResolver(
         // run inside `init` if the bytes haven't been fully decoded yet.
         seedEmojiFontIfPending()
 
-        val preferColor = match.preferColorEmoji && isLikelyEmoji(codepoint)
+        // VS16 context counts: U+2194 alone is a text-presentation arrow,
+        // but "U+2194 U+FE0F" is the emoji - callers pass the selector's
+        // presence so the pick matches what the platform would render.
+        val preferColor = match.preferColorEmoji && (isLikelyEmoji(codepoint) || emojiPresentation)
         // Codepoint script gates the pending walk so an Arabic lookup
         // doesn't trigger a 25 MB NotoColorEmoji load just to discover
         // that emoji font has no Arabic glyphs. `null` means "no clear
