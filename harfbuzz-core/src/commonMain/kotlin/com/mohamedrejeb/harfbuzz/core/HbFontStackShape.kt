@@ -187,10 +187,18 @@ private suspend fun shapeRunWithFallback(
     // Bottom of the explicit chain AND no system resolver → accept primary.
     if (fonts.size == 1 && systemResolver == null) return listOf(primaryRun)
 
-    // For each cluster, did any glyph resolve (id != 0)?
+    // For each cluster, did EVERY glyph resolve (id != 0)? The AND matters:
+    // HarfBuzz substitutes default-ignorable codepoints (VS16, ZWJ, ...)
+    // with the font's invisible glyph - a nonzero gid with zero advance -
+    // so an emoji sequence like U+2764 U+FE0F shaped with a non-emoji
+    // primary yields [notdef, invisible] in one cluster. Any-glyph-resolved
+    // (OR) semantics would call that cluster covered and pin it to the
+    // primary, rendering the heart as a blank notdef instead of falling
+    // back. A notdef is never emitted for an ignorable, so any notdef in
+    // the cluster means some real codepoint is uncovered.
     val clusterHasGlyph = HashMap<Int, Boolean>()
     for (g in primaryRun.glyphs) {
-        clusterHasGlyph[g.cluster] = (clusterHasGlyph[g.cluster] == true) || g.glyphId != 0
+        clusterHasGlyph[g.cluster] = (clusterHasGlyph[g.cluster] != false) && g.glyphId != 0
     }
 
     if (clusterHasGlyph.isEmpty() || clusterHasGlyph.values.all { it }) {
