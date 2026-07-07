@@ -72,6 +72,14 @@ public actual class HbFace internal constructor(
         return cachedHasColorPaint
     }
 
+    public actual fun hasColorPng(): Boolean {
+        check(!closed) { "hb object disposed" }
+        // The worker-side paint walker has no image-op writer yet, so
+        // bitmap glyphs can't be drawn on wasm. Report false so nothing
+        // ranks a CBDT/sbix font as a drawable color font here.
+        return false
+    }
+
     public actual fun hasColorSvg(): Boolean {
         check(!closed) { "hb object disposed" }
         return cachedHasColorSvg

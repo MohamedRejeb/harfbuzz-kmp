@@ -237,8 +237,10 @@ internal class JvmSystemFontResolver(
             .getOrNull() ?: return null
         val nameLower = path.nameWithoutExtension.lowercase()
         val italic = "italic" in nameLower || "oblique" in nameLower
+        // PNG counts: CBDT/sbix bitmap glyphs (Apple Color Emoji on macOS)
+        // render via the paint pipeline's PAINT_IMAGE ops on JVM.
         val hasColor = runCatching {
-            face.hasColorPaint() || face.hasColorLayers() || face.hasColorSvg()
+            face.hasColorPaint() || face.hasColorLayers() || face.hasColorSvg() || face.hasColorPng()
         }.getOrDefault(false)
         val l = Loaded(
             face = face,

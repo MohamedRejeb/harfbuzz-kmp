@@ -98,12 +98,17 @@ public fun defaultFlagsFor(font: HbFont): GlyphSnapshotFlags {
     val hasColorPaint = runCatching { face.hasColorPaint() }.getOrDefault(false)
     val hasColorLayers = runCatching { face.hasColorLayers() }.getOrDefault(false)
     val hasColorSvg = runCatching { face.hasColorSvg() }.getOrDefault(false)
+    // Bitmap-emoji faces (CBDT/sbix) walk the same paint funcs and emit
+    // PAINT_IMAGE ops, so they need paint trees collected just like COLR.
+    // `hasColorPng` is false on platforms whose paint walker can't forward
+    // image ops yet (iOS, wasm), which keeps their collection unchanged.
+    val hasColorPng = runCatching { face.hasColorPng() }.getOrDefault(false)
     val needsColr = !hasColorSvg
     return GlyphSnapshotFlags(
         flippedPath = true,
         rawPath = hasColorPaint && needsColr,
         colorLayers = hasColorLayers && needsColr,
-        paintTree = hasColorPaint && needsColr,
+        paintTree = (hasColorPaint || hasColorPng) && needsColr,
         svg = hasColorSvg,
     )
 }

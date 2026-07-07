@@ -530,6 +530,9 @@ namespace {
 // SWEEP_GRADIENT    : op + 4 × f32 + u8 extend + i32 stopCount + stopCount × stop
 // PUSH_GROUP        : op
 // POP_GROUP         : op + i32 mode
+// IMAGE             : op + i32 width + i32 height + i32 formatTag + f32 slant
+//                     + u8 hasExtents (+ 4 × f32 xBearing, yBearing, w, h)
+//                     + i32 byteLen + byteLen raw bytes (PNG stream)
 //
 // stop : f32 offset + u8 isForeground + i32 argb (9 bytes)
 
@@ -544,6 +547,12 @@ constexpr uint8_t PAINT_RADIAL_GRADIENT  = 8;
 constexpr uint8_t PAINT_SWEEP_GRADIENT   = 9;
 constexpr uint8_t PAINT_PUSH_GROUP       = 10;
 constexpr uint8_t PAINT_POP_GROUP        = 11;
+constexpr uint8_t PAINT_IMAGE            = 12;
+
+// Hard cap on one bitmap glyph's encoded bytes. CBDT/sbix per-glyph PNGs
+// are a few KB; the cap only exists so an adversarial font can't balloon
+// the paint buffer.
+constexpr unsigned int MAX_IMAGE_BYTES = 8u * 1024u * 1024u;
 
 // Hard cap on stops per gradient. COLR v1 in the wild rarely exceeds ~16;
 // we cap at 256 to keep adversarial fonts from blowing up the buffer.
@@ -653,14 +662,39 @@ void paintColor(hb_paint_funcs_t*, void* paint_data,
     writeI32(ctx, static_cast<int32_t>(hbColorToArgb(color)));
 }
 
-hb_bool_t paintImage(hb_paint_funcs_t*, void* /*paint_data*/,
-                     hb_blob_t* /*image*/, unsigned int /*width*/, unsigned int /*height*/,
-                     hb_tag_t /*format*/, float /*slant*/,
-                     hb_glyph_extents_t* /*extents*/, void*) {
-    // Bitmap/SVG image paint nodes are deferred to a later phase; report
-    // "not handled" so HarfBuzz doesn't recurse and the caller silently
-    // skips this layer rather than crashing.
-    return false;
+hb_bool_t paintImage(hb_paint_funcs_t*, void* paint_data,
+                     hb_blob_t* image, unsigned int width, unsigned int height,
+                     hb_tag_t format, float slant,
+                     hb_glyph_extents_t* extents, void*) {
+    // Bitmap glyphs (CBDT/CBLC/sbix - the format of most OS emoji fonts,
+    // e.g. Samsung's and pre-Android-13 NotoColorEmoji). Only PNG payloads
+    // are forwarded: the Kotlin renderers decode PNG, while SVG-in-image
+    // stays on the dedicated OT-SVG pipeline (fontGlyphSvg) and raw BGRA
+    // is rare enough to skip. Returning false tells HarfBuzz the layer
+    // wasn't handled so it can fall through without recursing.
+    if (format != HB_PAINT_IMAGE_FORMAT_PNG) return false;
+    unsigned int length = 0;
+    const char* data = hb_blob_get_data(image, &length);
+    if (data == nullptr || length == 0 || length > MAX_IMAGE_BYTES) return false;
+
+    PaintCtx* ctx = static_cast<PaintCtx*>(paint_data);
+    writeU8(ctx, PAINT_IMAGE);
+    writeI32(ctx, static_cast<int32_t>(width));
+    writeI32(ctx, static_cast<int32_t>(height));
+    writeI32(ctx, static_cast<int32_t>(format));
+    writeF32(ctx, slant);
+    writeU8(ctx, extents != nullptr ? 1 : 0);
+    if (extents != nullptr) {
+        writeF32(ctx, static_cast<float>(extents->x_bearing));
+        writeF32(ctx, static_cast<float>(extents->y_bearing));
+        writeF32(ctx, static_cast<float>(extents->width));
+        writeF32(ctx, static_cast<float>(extents->height));
+    }
+    writeI32(ctx, static_cast<int32_t>(length));
+    size_t off = ctx->buf->size();
+    ctx->buf->resize(off + length);
+    std::memcpy(ctx->buf->data() + off, data, length);
+    return true;
 }
 
 void paintLinearGradient(hb_paint_funcs_t*, void* paint_data,
@@ -735,6 +769,11 @@ hb_paint_funcs_t* sharedPaintFuncs() {
 JNIEXPORT jint JNICALL KH_FN(faceHasColorPaint)(JNIEnv*, jclass, jlong facePtr) {
     if (facePtr == 0) return 0;
     return hb_ot_color_has_paint(asFace(facePtr)) ? 1 : 0;
+}
+
+JNIEXPORT jint JNICALL KH_FN(faceHasColorPng)(JNIEnv*, jclass, jlong facePtr) {
+    if (facePtr == 0) return 0;
+    return hb_ot_color_has_png(asFace(facePtr)) ? 1 : 0;
 }
 
 // ───── SVG-in-OT ──────────────────────────────────────────────────────────
@@ -1014,7 +1053,9 @@ JNIEXPORT jbyteArray JNICALL KH_FN(fontPaintGlyph)(JNIEnv* env, jclass, jlong fo
     if (fontPtr == 0) return nullptr;
     hb_font_t* font = asFont(fontPtr);
     hb_face_t* face = hb_font_get_face(font);
-    if (!hb_ot_color_has_paint(face)) return nullptr;
+    // COLR paint trees OR bitmap (CBDT/sbix) glyphs both walk the paint
+    // funcs; bitmap-only faces emit PAINT_IMAGE ops via paintImage.
+    if (!hb_ot_color_has_paint(face) && !hb_ot_color_has_png(face)) return nullptr;
 
     std::vector<uint8_t> buf;
     buf.reserve(256);                              // typical glyph fits comfortably

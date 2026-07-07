@@ -24,6 +24,7 @@ public object PaintBufferParser {
     private const val OP_SWEEP_GRADIENT   = 9
     private const val OP_PUSH_GROUP       = 10
     private const val OP_POP_GROUP        = 11
+    private const val OP_IMAGE            = 12
 
     public fun dispatch(bytes: ByteArray, sink: HbPaintSink) {
         if (bytes.isEmpty()) return
@@ -74,6 +75,28 @@ public object PaintBufferParser {
                     }
                     OP_PUSH_GROUP -> sink.pushGroup()
                     OP_POP_GROUP -> sink.popGroup(CompositeMode.fromHbValue(readI32()))
+                    OP_IMAGE -> {
+                        val width = readI32()
+                        val height = readI32()
+                        val formatTag = readI32()
+                        val slant = readF32()
+                        val extents = if (readU8() != 0) {
+                            PaintImageExtents(readF32(), readF32(), readF32(), readF32())
+                        } else {
+                            null
+                        }
+                        val data = readBytes(readI32())
+                        sink.image(
+                            PaintImage(
+                                data = data,
+                                width = width,
+                                height = height,
+                                formatTag = formatTag,
+                                slant = slant,
+                                extents = extents,
+                            ),
+                        )
+                    }
                     else -> error("Unknown paint opcode: $op (offset ${pos - 1})")
                 }
             }
@@ -106,5 +129,14 @@ public object PaintBufferParser {
         }
 
         private fun readF32(): Float = Float.fromBits(readI32())
+
+        private fun readBytes(count: Int): ByteArray {
+            require(count >= 0 && pos + count <= data.size) {
+                "paint buffer underrun at offset $pos (want $count bytes)"
+            }
+            val out = data.copyOfRange(pos, pos + count)
+            pos += count
+            return out
+        }
     }
 }

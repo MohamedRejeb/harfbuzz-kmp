@@ -7,14 +7,19 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import com.mohamedrejeb.harfbuzz.core.ColorStop
 import com.mohamedrejeb.harfbuzz.core.CompositeMode
 import com.mohamedrejeb.harfbuzz.core.GradientExtend
 import com.mohamedrejeb.harfbuzz.core.HbPaintSink
+import com.mohamedrejeb.harfbuzz.core.PaintImage
 
 /**
  * An [HbPaintSink] that translates HarfBuzz paint ops into Compose draws on
@@ -191,6 +196,53 @@ internal class ComposePaintSink(
     override fun popGroup(mode: CompositeMode) {
         canvas.restore()
     }
+
+    override fun image(image: PaintImage) {
+        val ext = image.extents ?: return
+        if (ext.width == 0f || ext.height == 0f) return
+        val bitmap = decodeCached(image) ?: return
+        // Extents are Y-up design space: yBearing is the top edge and
+        // height is negative (extends downward). Mapping the bitmap's
+        // pixel grid through a scale with that negative height flips it
+        // back to raster orientation under the caller's Y-flip transform.
+        canvas.save()
+        canvas.translate(ext.xBearing, ext.yBearing)
+        canvas.scale(ext.width / bitmap.width, ext.height / bitmap.height)
+        val paint = Paint().apply {
+            alpha = alphaMultiplier
+            blendMode = this@ComposePaintSink.blendMode
+            // Emoji strikes (typically 128px+) usually draw smaller than
+            // their pixel size; bilinear-with-mipmaps keeps them smooth.
+            filterQuality = FilterQuality.Medium
+        }
+        canvas.drawImageRect(
+            image = bitmap,
+            srcOffset = IntOffset.Zero,
+            srcSize = IntSize(bitmap.width, bitmap.height),
+            dstOffset = IntOffset.Zero,
+            dstSize = IntSize(bitmap.width, bitmap.height),
+            paint = paint,
+        )
+        canvas.restore()
+    }
+
+    /**
+     * Decode [image]'s PNG payload once and stash the result in the op's
+     * renderer-cache slot; every later replay of the same recorded tree
+     * reuses the decoded bitmap. A decode failure is cached too so a
+     * corrupt glyph doesn't retry every frame.
+     */
+    private fun decodeCached(image: PaintImage): ImageBitmap? {
+        when (val cached = image.rendererCache) {
+            is ImageBitmap -> return cached
+            DecodeFailed -> return null
+        }
+        val decoded = decodePaintImage(image.data)
+        image.rendererCache = decoded ?: DecodeFailed
+        return decoded
+    }
+
+    private object DecodeFailed
 
     private fun fillCurrentClip(paint: Paint) {
         canvas.drawRect(coverBounds, paint)
