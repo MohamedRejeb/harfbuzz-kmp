@@ -93,10 +93,12 @@ JNIEXPORT jint   JNICALL KH_FN(fontDrawGlyph)(JNIEnv* env, jclass, jlong fontPtr
 // ───── Color paint (COLR v1) ──────────────────────────────────────────────
 // 1 if the face has a COLR v1 paint table, 0 otherwise.
 JNIEXPORT jint   JNICALL KH_FN(faceHasColorPaint)(JNIEnv* env, jclass, jlong facePtr);
+// 1 if the face has PNG bitmap glyphs (CBDT/CBLC or sbix), 0 otherwise.
+JNIEXPORT jint   JNICALL KH_FN(faceHasColorPng)(JNIEnv* env, jclass, jlong facePtr);
 // Walks the paint tree of `glyphId` and returns a serialised byte buffer
 // (native byte order) describing every paint operation. Returns null when
-// the face has no paint table or the glyph yields no operations. The
-// Kotlin side decodes this into HbPaintSink callbacks.
+// the face has no paint/bitmap glyph data or the glyph yields no
+// operations. The Kotlin side decodes this into HbPaintSink callbacks.
 JNIEXPORT jbyteArray JNICALL KH_FN(fontPaintGlyph)(JNIEnv* env, jclass, jlong fontPtr,
                                                     jint glyphId, jint foreground, jint paletteIndex);
 

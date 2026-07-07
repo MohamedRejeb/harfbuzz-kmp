@@ -77,24 +77,30 @@ internal class JvmSystemFontResolver(
     /** Pre-built comparator without color-emoji bias. */
     private val rankPlain: Comparator<Loaded> = buildRankComparator(preferColor = false)
 
-    private fun key(codepoint: Int, italic: Boolean): Long =
-        (codepoint.toLong() and 0xFFFFFFFFL) or (if (italic) 1L shl 32 else 0L)
+    private fun key(codepoint: Int, italic: Boolean, emojiPresentation: Boolean): Long =
+        (codepoint.toLong() and 0xFFFFFFFFL) or
+            (if (italic) 1L shl 32 else 0L) or
+            (if (emojiPresentation) 1L shl 33 else 0L)
 
-    override suspend fun fontFor(codepoint: Int): HbFont? {
+    override suspend fun fontFor(codepoint: Int): HbFont? =
+        fontFor(codepoint, emojiPresentation = false)
+
+    override suspend fun fontFor(codepoint: Int, emojiPresentation: Boolean): HbFont? {
         val italic = style.italic
-        val cacheKey = key(codepoint, italic)
+        val cacheKey = key(codepoint, italic, emojiPresentation)
         if (resolved.containsKey(cacheKey)) {
             val cached = resolved[cacheKey] ?: return null
             return sizelessFont(cached)
         }
 
         // Color-emoji bias: when the codepoint is in a known emoji range
-        // and the user asked for color emoji, prefer color-bearing fonts
-        // ahead of monochrome ones. Without this, on systems where both
-        // a color emoji font and a (monochrome) symbols font cover the
-        // same codepoint, the symbols font often wins by load order and
+        // (or explicitly qualified with VS16 by the caller) and the user
+        // asked for color emoji, prefer color-bearing fonts ahead of
+        // monochrome ones. Without this, on systems where both a color
+        // emoji font and a (monochrome) symbols font cover the same
+        // codepoint, the symbols font often wins by load order and
         // emoji come back as outline shapes.
-        val preferColor = match.preferColorEmoji && isLikelyEmoji(codepoint)
+        val preferColor = match.preferColorEmoji && (isLikelyEmoji(codepoint) || emojiPresentation)
         // Codepoint script gates the pending walk so an Arabic lookup
         // doesn't load Apple Color Emoji.ttc (188 MB on macOS) just to
         // discover it has no Arabic glyphs. `null` means "no clear bias"
@@ -237,8 +243,10 @@ internal class JvmSystemFontResolver(
             .getOrNull() ?: return null
         val nameLower = path.nameWithoutExtension.lowercase()
         val italic = "italic" in nameLower || "oblique" in nameLower
+        // PNG counts: CBDT/sbix bitmap glyphs (Apple Color Emoji on macOS)
+        // render via the paint pipeline's PAINT_IMAGE ops on JVM.
         val hasColor = runCatching {
-            face.hasColorPaint() || face.hasColorLayers() || face.hasColorSvg()
+            face.hasColorPaint() || face.hasColorLayers() || face.hasColorSvg() || face.hasColorPng()
         }.getOrDefault(false)
         val l = Loaded(
             face = face,

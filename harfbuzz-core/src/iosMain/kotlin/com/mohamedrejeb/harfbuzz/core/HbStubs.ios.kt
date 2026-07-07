@@ -175,6 +175,14 @@ public actual class HbFace internal constructor(
         return cachedHasColorPaint
     }
 
+    public actual fun hasColorPng(): Boolean {
+        check(!closed) { "hb object disposed" }
+        // IosPaintFuncs has no image callback yet, so bitmap glyphs can't
+        // be drawn on iOS. Report false so nothing ranks a CBDT/sbix font
+        // as a drawable color font here.
+        return false
+    }
+
     public actual fun hasColorSvg(): Boolean {
         check(!closed) { "hb object disposed" }
         return cachedHasColorSvg

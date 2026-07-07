@@ -97,6 +97,7 @@ internal object HarfbuzzNative {
 
     // Color paint (COLR v1)
     @JvmStatic external fun faceHasColorPaint(facePtr: Long): Int
+    @JvmStatic external fun faceHasColorPng(facePtr: Long): Int
     @JvmStatic external fun fontPaintGlyph(
         fontPtr: Long,
         glyphId: Int,

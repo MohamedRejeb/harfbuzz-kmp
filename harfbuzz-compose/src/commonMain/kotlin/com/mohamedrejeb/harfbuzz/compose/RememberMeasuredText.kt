@@ -349,9 +349,12 @@ private suspend fun buildMeasuredTextUncached(
         val face = font.face
         val hasColorPaint = runCatching { face.hasColorPaint() }.getOrDefault(false)
         val hasColorLayers = runCatching { face.hasColorLayers() }.getOrDefault(false)
+        // Bitmap-emoji faces (CBDT/sbix) render through the same paint-tree
+        // replay - their trees hold PAINT_IMAGE ops instead of COLR fills.
+        val hasColorPng = runCatching { face.hasColorPng() }.getOrDefault(false)
 
-        if (hasColorPaint) anyHasColorPaint = true
-        if (hasColorLayers || hasColorPaint) anyHasColorGlyphs = true
+        if (hasColorPaint || hasColorPng) anyHasColorPaint = true
+        if (hasColorLayers || hasColorPaint || hasColorPng) anyHasColorGlyphs = true
         if (caches.svgCache.hasAnyGlyphs) {
             anyHasSvg = true
             anyHasColorGlyphs = true

@@ -88,6 +88,9 @@ public actual class HbFace internal constructor(
     private val cachedHasColorSvg: Boolean by lazy {
         HarfbuzzNative.faceHasColorSvg(ptr) != 0
     }
+    private val cachedHasColorPng: Boolean by lazy {
+        HarfbuzzNative.faceHasColorPng(ptr) != 0
+    }
 
     public actual fun hasColorLayers(): Boolean {
         check(!closed) { "hb object disposed" }
@@ -97,6 +100,11 @@ public actual class HbFace internal constructor(
     public actual fun hasColorPaint(): Boolean {
         check(!closed) { "hb object disposed" }
         return cachedHasColorPaint
+    }
+
+    public actual fun hasColorPng(): Boolean {
+        check(!closed) { "hb object disposed" }
+        return cachedHasColorPng
     }
 
     public actual fun hasColorSvg(): Boolean {

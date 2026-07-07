@@ -30,6 +30,18 @@ public expect class HbFace : AutoCloseable {
     public fun hasColorPaint(): Boolean
 
     /**
+     * `true` if this face ships PNG bitmap color glyphs (`CBDT`/`CBLC` or
+     * `sbix` tables) - the format of most OS emoji fonts (Samsung's emoji,
+     * pre-Android-13 NotoColorEmoji). Bitmap glyphs surface through the
+     * paint pipeline as [HbPaintSink.image] ops.
+     *
+     * Currently only the JVM/Android backend reports the real table state;
+     * iOS and wasm return `false` until their paint walkers forward image
+     * ops, so callers never rank a bitmap font as drawable there.
+     */
+    public fun hasColorPng(): Boolean
+
+    /**
      * `true` if this face ships an `SVG ` (SVG-in-OpenType) table.
      * Authors typically use it for higher-fidelity color glyph rendering
      * than COLR can express (gradients-on-paths, filters, full SVG 1.1

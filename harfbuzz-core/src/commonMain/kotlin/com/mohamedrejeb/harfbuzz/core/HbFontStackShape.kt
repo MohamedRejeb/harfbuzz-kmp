@@ -179,6 +179,17 @@ private suspend fun shapeRunWithFallback(
     systemResolver: SystemFontResolver?,
     sizePx: Float,
     buffer: HbBuffer,
+    /**
+     * How many system-resolved fonts this interval has already been
+     * re-shaped through. A notdef interval can mix scripts (emoji
+     * followed by Thai, Latin next to emoji on a wrapped line) so one
+     * system font is rarely the final word — each recursion level
+     * resolves the interval's next leading script. Capped by
+     * [MAX_SYSTEM_FALLBACK_DEPTH] so a font that covers an interval's
+     * first codepoint but never its full first cluster (e.g. missing a
+     * combining mark) can't recurse forever.
+     */
+    systemDepth: Int = 0,
 ): List<ShapedRun> {
     if (text.isEmpty() || fonts.isEmpty()) return emptyList()
     val primary = fonts.first()
@@ -187,10 +198,18 @@ private suspend fun shapeRunWithFallback(
     // Bottom of the explicit chain AND no system resolver → accept primary.
     if (fonts.size == 1 && systemResolver == null) return listOf(primaryRun)
 
-    // For each cluster, did any glyph resolve (id != 0)?
+    // For each cluster, did EVERY glyph resolve (id != 0)? The AND matters:
+    // HarfBuzz substitutes default-ignorable codepoints (VS16, ZWJ, ...)
+    // with the font's invisible glyph - a nonzero gid with zero advance -
+    // so an emoji sequence like U+2764 U+FE0F shaped with a non-emoji
+    // primary yields [notdef, invisible] in one cluster. Any-glyph-resolved
+    // (OR) semantics would call that cluster covered and pin it to the
+    // primary, rendering the heart as a blank notdef instead of falling
+    // back. A notdef is never emitted for an ignorable, so any notdef in
+    // the cluster means some real codepoint is uncovered.
     val clusterHasGlyph = HashMap<Int, Boolean>()
     for (g in primaryRun.glyphs) {
-        clusterHasGlyph[g.cluster] = (clusterHasGlyph[g.cluster] == true) || g.glyphId != 0
+        clusterHasGlyph[g.cluster] = (clusterHasGlyph[g.cluster] != false) && g.glyphId != 0
     }
 
     if (clusterHasGlyph.isEmpty() || clusterHasGlyph.values.all { it }) {
@@ -255,6 +274,7 @@ private suspend fun shapeRunWithFallback(
                     systemResolver = systemResolver,
                     sizePx = sizePx,
                     buffer = buffer,
+                    systemDepth = systemDepth,
                 )
             }
             systemResolver != null -> {
@@ -264,8 +284,31 @@ private suspend fun shapeRunWithFallback(
                 // multi-codepoint clusters (graphemes, ligatures) share the
                 // same script and therefore the same covering font.
                 val firstCp = firstCodePoint(sub)
-                val sysFont = systemResolver.fontFor(firstCp)
-                if (sysFont != null) {
+                val sysFont = systemResolver.fontFor(
+                    firstCp,
+                    emojiPresentation = hasEmojiPresentationSelector(sub, firstCp),
+                )
+                if (sysFont != null && systemDepth < MAX_SYSTEM_FALLBACK_DEPTH) {
+                    // The system font covers the interval's FIRST codepoint,
+                    // but a wrapped or mixed-script interval can carry more
+                    // scripts than one font (emoji then Thai; Latin then
+                    // emoji on a line the primary covers none of). Recurse
+                    // with the system font as the interval's primary so its
+                    // own notdefs resolve through the next system font
+                    // instead of rendering invisible.
+                    shapeRunWithFallback(
+                        text = sub,
+                        isRtl = isRtl,
+                        language = language,
+                        features = features,
+                        fonts = listOf(sysFont),
+                        systemResolver = systemResolver,
+                        sizePx = sizePx,
+                        buffer = buffer,
+                        systemDepth = systemDepth + 1,
+                    )
+                } else if (sysFont != null) {
+                    // Depth cap reached - accept this font's shape as-is.
                     listOf(shapeOnce(sub, sysFont, sizePx, isRtl, language, features, buffer))
                 } else {
                     // System has nothing either - fall back to the primary's
@@ -348,4 +391,27 @@ private fun firstCodePoint(text: String): Int {
         }
     }
     return high.code
+}
+
+/**
+ * Max system fonts one notdef interval recurses through. Real intervals
+ * mix at most a handful of scripts; the cap only exists so a font that
+ * covers an interval's first codepoint but never completes its first
+ * cluster can't recurse unboundedly.
+ */
+private const val MAX_SYSTEM_FALLBACK_DEPTH = 4
+
+/** VS16 - "render the preceding character with emoji presentation". */
+private const val EMOJI_PRESENTATION_SELECTOR = 0xFE0F
+
+/**
+ * `true` when [firstCp] (the code point at the start of [text]) is
+ * immediately followed by VS16 - a text-default symbol explicitly
+ * qualified as emoji. Passed to the system resolver so it prefers a
+ * color emoji font even for codepoints outside the emoji blocks
+ * (arrows, ™, ⌚-style dingbats).
+ */
+private fun hasEmojiPresentationSelector(text: String, firstCp: Int): Boolean {
+    val next = if (firstCp > 0xFFFF) 2 else 1
+    return text.length > next && text[next].code == EMOJI_PRESENTATION_SELECTOR
 }

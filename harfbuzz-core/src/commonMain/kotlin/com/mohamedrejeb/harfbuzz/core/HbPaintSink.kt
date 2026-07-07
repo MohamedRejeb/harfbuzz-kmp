@@ -117,4 +117,51 @@ public interface HbPaintSink {
 
     /** Composite the most recent group onto the parent using [mode]. */
     public fun popGroup(mode: CompositeMode)
+
+    /**
+     * Draw a bitmap glyph layer (CBDT/CBLC or sbix PNG - the format of
+     * most OS emoji fonts). The bitmap fills [PaintImage.extents] in the
+     * current transform's coordinate space; extents use HarfBuzz's Y-up
+     * convention (`yBearing` is the top edge, `height` is negative).
+     *
+     * Default is a no-op so sinks that only consume vector ops (path
+     * extractors, clip collectors, platforms without a decoder) keep
+     * working unchanged.
+     */
+    public fun image(image: PaintImage) {}
 }
+
+/**
+ * One bitmap glyph layer forwarded from HarfBuzz's `image` paint callback.
+ *
+ * [data] holds the encoded PNG stream exactly as it appears in the font.
+ * Decoding is the renderer's job; [rendererCache] is an opaque slot where
+ * a renderer may stash its decoded form so replaying the same recorded op
+ * every frame doesn't re-decode. Instances are shared between recordings
+ * and replays - treat [data] as immutable.
+ */
+public class PaintImage(
+    public val data: ByteArray,
+    /** Bitmap pixel width as reported by HarfBuzz (0 when unknown). */
+    public val width: Int,
+    /** Bitmap pixel height as reported by HarfBuzz (0 when unknown). */
+    public val height: Int,
+    /** Image format tag (`png ` is the only format currently forwarded). */
+    public val formatTag: Int,
+    /** Synthetic-slant skew requested by the font; 0 for emoji fonts. */
+    public val slant: Float,
+    /** Placement rect in font design space, `null` when the font omits it. */
+    public val extents: PaintImageExtents?,
+) {
+    /** Opaque renderer-owned cache of the decoded bitmap. Benign races only. */
+    @kotlin.concurrent.Volatile
+    public var rendererCache: Any? = null
+}
+
+/** Glyph extents for a [PaintImage], in HarfBuzz's Y-up design space. */
+public data class PaintImageExtents(
+    val xBearing: Float,
+    val yBearing: Float,
+    val width: Float,
+    val height: Float,
+)

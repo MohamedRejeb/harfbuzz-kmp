@@ -54,6 +54,12 @@ public sealed interface RecordedPaintOp {
     public data object PushGroup : RecordedPaintOp
 
     public data class PopGroup(val mode: CompositeMode) : RecordedPaintOp
+
+    /**
+     * Wraps the shared [PaintImage] instance so replays reuse the same
+     * decoded-bitmap cache slot across frames.
+     */
+    public class Image(public val image: PaintImage) : RecordedPaintOp
 }
 
 /**
@@ -132,6 +138,10 @@ public class RecordingPaintSink : HbPaintSink {
     override fun popGroup(mode: CompositeMode) {
         _ops += RecordedPaintOp.PopGroup(mode)
     }
+
+    override fun image(image: PaintImage) {
+        _ops += RecordedPaintOp.Image(image)
+    }
 }
 
 /** Replay a recorded list of ops against a fresh sink. */
@@ -159,6 +169,7 @@ public fun List<RecordedPaintOp>.replay(sink: HbPaintSink) {
             )
             RecordedPaintOp.PushGroup -> sink.pushGroup()
             is RecordedPaintOp.PopGroup -> sink.popGroup(op.mode)
+            is RecordedPaintOp.Image -> sink.image(op.image)
         }
     }
 }

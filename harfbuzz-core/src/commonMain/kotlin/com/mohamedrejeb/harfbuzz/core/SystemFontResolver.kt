@@ -23,6 +23,17 @@ internal interface SystemFontResolver : AutoCloseable {
     suspend fun fontFor(codepoint: Int): HbFont?
 
     /**
+     * Like [fontFor], with the caller's presentation context:
+     * [emojiPresentation] is `true` when [codepoint] is followed by
+     * VS16 (`U+FE0F`) in the source text — a text-default symbol like
+     * `U+2194` (↔) qualified to render as emoji. Resolvers that rank
+     * color fonts should treat such codepoints as emoji even when the
+     * bare codepoint wouldn't classify; the default ignores the hint.
+     */
+    suspend fun fontFor(codepoint: Int, emojiPresentation: Boolean): HbFont? =
+        fontFor(codepoint)
+
+    /**
      * Pre-resolve every codepoint in [codepoints] so the resolver's
      * cache (and the OS page cache for any system font it touches) is
      * warm by the time the first user-visible paragraph encounters
