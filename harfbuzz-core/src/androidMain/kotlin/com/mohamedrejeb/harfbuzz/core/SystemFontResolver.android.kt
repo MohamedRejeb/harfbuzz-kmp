@@ -1,12 +1,17 @@
 package com.mohamedrejeb.harfbuzz.core
 
+import android.graphics.Paint
+import android.graphics.Typeface
 import android.graphics.fonts.SystemFonts
+import android.graphics.text.TextRunShaper
 import android.os.Build
+import android.os.LocaleList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import java.io.File
+import java.util.Locale
 import kotlin.math.abs
 
 /**
@@ -35,8 +40,18 @@ private const val PREDICT_FILES_PER_CODEPOINT: Int = 2
  *   - a `FontStyle(weight, slant)` style descriptor,
  *   - a [android.os.LocaleList] of the locales the font was designed for.
  *
- * Combined with HarfBuzz's color-table queries, this gives us the same
- * ranking richness the JVM resolver achieves on desktop:
+ * **Resolution order.** On API 31+ each cache-miss codepoint is first
+ * resolved through the platform text stack itself ([TextRunShaper], see
+ * [PlatformFontPicker]): minikin tells us the exact font file it would
+ * use, which is what Compose Text renders with - deterministic, OEM- and
+ * updatable-font-aware, no heuristics. The ranked walk below is the
+ * fallback for API 29-30 and for codepoints the platform can't cover.
+ * The one exception is emoji when the app ships `emoji2-bundled`: the
+ * bundled face wins over the platform pick so HarfBuzz Text matches what
+ * EmojiCompat substitutes into Compose Text (see [EmojiCompatBridge]).
+ *
+ * Combined with HarfBuzz's color-table queries, the heuristic walk gives
+ * us the same ranking richness the JVM resolver achieves on desktop:
  *   1. **Color-emoji bias** - when the codepoint is in a known emoji
  *      block and `preferColorEmoji = true`, color-bearing fonts (with
  *      `COLR`/`CPAL`/`SVG ` tables) rank above monochrome ones.
@@ -91,6 +106,8 @@ internal class AndroidSystemFontResolver(
         val likelyHasColor: Boolean,
         /** BCP-47 primary subtags inferred from `Font.getLocaleList`. */
         val languageHints: Set<String>,
+        /** Face index inside a `.ttc` collection; 0 for plain `.ttf`/`.otf`. */
+        val ttcIndex: Int = 0,
     )
 
     private class Loaded(
@@ -151,7 +168,16 @@ internal class AndroidSystemFontResolver(
             val ai = if (a.meta.italic == italic) 0 else 1
             val bi = if (b.meta.italic == italic) 0 else 1
             if (ai != bi) return@Comparator ai - bi
-            abs(a.meta.weight - weight) - abs(b.meta.weight - weight)
+            val dw = abs(a.meta.weight - weight) - abs(b.meta.weight - weight)
+            if (dw != 0) return@Comparator dw
+            // Deterministic total order. `SystemFonts.getAvailableFonts()`
+            // iterates an IdentityHashMap, so its order is random on every
+            // process launch; without a final tiebreaker the stable sort
+            // preserves that randomness and the fallback winner changes
+            // across sessions for codepoints many fonts cover.
+            val byPath = a.meta.file.path.compareTo(b.meta.file.path)
+            if (byPath != 0) return@Comparator byPath
+            a.meta.ttcIndex - b.meta.ttcIndex
         }
     }
 
@@ -161,6 +187,14 @@ internal class AndroidSystemFontResolver(
      * can't load this in `init`). Cleared after seeding.
      */
     private var pendingEmojiBootstrap: ByteArray? = bootstrapEmojiBytes
+
+    /**
+     * The seeded emoji2-bundled face, held separately from [loaded] so
+     * emoji lookups can prefer it over the platform pick - EmojiCompat
+     * substitutes this exact font into Compose Text, so parity requires
+     * it to win even though minikin would pick the OS emoji font.
+     */
+    private var bundledEmoji: Loaded? = null
 
     /**
      * Lazily load [pendingEmojiBootstrap] as a color-emoji face and
@@ -183,7 +217,9 @@ internal class AndroidSystemFontResolver(
             likelyHasColor = true,
             languageHints = setOf(EMOJI_SCRIPT_TAG),
         )
-        loaded.add(Loaded(face = face, meta = meta, hasColor = true))
+        val l = Loaded(face = face, meta = meta, hasColor = true)
+        bundledEmoji = l
+        loaded.add(l)
     }
 
     private fun key(codepoint: Int, italic: Boolean): Long =
@@ -209,7 +245,33 @@ internal class AndroidSystemFontResolver(
         // bias" (Latin / COMMON / ambiguous) - fall back to FIFO.
         val scriptHints = codepointToScriptHints(codepoint)
 
-        // 1) Walk already-loaded faces, ranked by post-load attributes.
+        // 1) EmojiCompat parity: when the app ships emoji2-bundled, Compose
+        // Text draws emoji with that font (EmojiCompat substitution), so it
+        // must win over whatever minikin would pick.
+        if (preferColor) {
+            bundledEmoji?.let { l ->
+                val font = sizelessFont(l)
+                if (font.glyphIdForCodepoint(codepoint) != 0) {
+                    resolved[cacheKey] = l
+                    return font
+                }
+            }
+        }
+
+        // 2) Ask the platform (API 31+): minikin resolves the exact font
+        // file the native text stack - and therefore Compose Text - would
+        // use for this codepoint. Deterministic and OEM/updatable-font
+        // aware; falls through to the heuristic walk below on older APIs
+        // or when the platform only has a notdef. For emoji the pick must
+        // also be drawable by our vector-only paint pipeline (see
+        // [platformPickLoaded]) - otherwise the color-preferring walk
+        // below finds a COLR/SVG cover instead.
+        platformPickLoaded(codepoint, requireDrawableColor = preferColor)?.let { l ->
+            resolved[cacheKey] = l
+            return sizelessFont(l)
+        }
+
+        // 3) Walk already-loaded faces, ranked by post-load attributes.
         val orderedLoaded = loaded.sortedWith(
             if (preferColor) rankLoadedPreferColor else rankLoadedPlain,
         )
@@ -227,7 +289,7 @@ internal class AndroidSystemFontResolver(
             }
         }
 
-        // 2) Lazy-load from the pending queue, picking script-matching
+        // 4) Lazy-load from the pending queue, picking script-matching
         // candidates first when the codepoint has a clear script bias.
         while (pending.isNotEmpty()) {
             val meta = pickNextPending(scriptHints) ?: break
@@ -244,10 +306,75 @@ internal class AndroidSystemFontResolver(
             }
         }
 
-        // 3) Exhausted - cache the miss so we don't walk the chain again.
+        // 5) Exhausted - cache the miss so we don't walk the chain again.
         resolved[cacheKey] = null
         return null
     }
+
+    /**
+     * Resolve [codepoint] through the platform text stack and return the
+     * matching face, lazily loading it on first use. Returns `null` below
+     * API 31, when minikin itself only has a notdef for the codepoint, or
+     * when the picked font can't be opened - callers fall through to the
+     * heuristic ranked walk.
+     *
+     * [requireDrawableColor] rejects picks our paint pipeline can't
+     * rasterize: minikin happily returns bitmap-emoji fonts (CBDT/CBLC -
+     * Samsung's emoji font, `NotoColorEmojiLegacy`, pre-13 `NotoColorEmoji`)
+     * which have real cmap coverage and advances but no outlines and no
+     * COLR paint tree, so accepting them shapes to *invisible* glyphs.
+     * `Loaded.hasColor` is exactly the "COLR/SVG vector color" check the
+     * heuristic walk already trusts, so rejecting here hands the codepoint
+     * to that walk, which finds a drawable color cover instead.
+     */
+    private suspend fun platformPickLoaded(
+        codepoint: Int,
+        requireDrawableColor: Boolean = false,
+    ): Loaded? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return null
+        val picked = PlatformFontPicker.pick(
+            codepoint = codepoint,
+            style = style,
+            languages = match.languages,
+            emojiPresentation = requireDrawableColor,
+        ) ?: return null
+        val file = picked.file ?: return null
+        val ttcIndex = picked.ttcIndex
+        loaded.firstOrNull { it.meta.file == file && it.meta.ttcIndex == ttcIndex }?.let { l ->
+            if (requireDrawableColor && !l.hasColor) return null
+            return if (sizelessFont(l).glyphIdForCodepoint(codepoint) != 0) l else null
+        }
+        val idx = pendingIndexOf(file, ttcIndex)
+        val meta = if (idx >= 0) pending.removeAt(idx) else metaFromPlatformFont(picked, file, ttcIndex)
+        val l = tryLoad(meta) ?: return null
+        if (requireDrawableColor && !l.hasColor) return null
+        return if (sizelessFont(l).glyphIdForCodepoint(codepoint) != 0) l else null
+    }
+
+    private fun pendingIndexOf(file: File, ttcIndex: Int): Int =
+        pending.indexOfFirst { it.file == file && it.ttcIndex == ttcIndex }
+
+    /**
+     * Metadata for a platform-picked font that isn't in the
+     * `SystemFonts.getAvailableFonts()` snapshot (e.g. an updatable font
+     * under `/data/fonts`). Derived from the platform [android.graphics.fonts.Font]
+     * directly, so no extra I/O.
+     */
+    private fun metaFromPlatformFont(
+        picked: android.graphics.fonts.Font,
+        file: File,
+        ttcIndex: Int,
+    ): PendingCandidate = PendingCandidate(
+        file = file,
+        weight = picked.style.weight,
+        italic = picked.style.slant == android.graphics.fonts.FontStyle.FONT_SLANT_ITALIC,
+        likelyHasColor = likelyHasColorFromName(file.name),
+        languageHints = readLocaleList(picked),
+        ttcIndex = ttcIndex,
+    )
+
+    /** Identity of one face on disk - `.ttc` collections hold several. */
+    private fun faceKey(file: File, ttcIndex: Int): String = "${file.path}#$ttcIndex"
 
     /**
      * Optimised prewarm: predict which platform font files the per-codepoint
@@ -281,7 +408,10 @@ internal class AndroidSystemFontResolver(
      * cover walk would otherwise probe sequentially.
      */
     override suspend fun prewarm(codepoints: IntArray) {
-        val predicted = predictMetasForPrewarm(codepoints)
+        seedEmojiFontIfPending()
+        val predicted =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) predictMetasViaPlatform(codepoints)
+            else predictMetasForPrewarm(codepoints)
         if (predicted.isEmpty()) {
             for (cp in codepoints) fontFor(cp)
             return
@@ -302,15 +432,15 @@ internal class AndroidSystemFontResolver(
         // `prewarm` on, and `loaded` / `pending` haven't been touched
         // since we read `predicted`. Dedupe `pending` so the sequential
         // walk doesn't re-load anything we already have.
-        val mergedFiles = HashSet<File>(loadedFaces.size)
+        val mergedKeys = HashSet<String>(loadedFaces.size)
         for (l in loadedFaces) {
             loaded.add(l)
-            mergedFiles.add(l.meta.file)
+            mergedKeys.add(faceKey(l.meta.file, l.meta.ttcIndex))
         }
-        if (mergedFiles.isNotEmpty()) {
+        if (mergedKeys.isNotEmpty()) {
             // ArrayDeque has no `removeIf`; rebuild it. `pending` typically
             // has ~200 entries, so this is a microsecond-scale rebuild.
-            pending = ArrayDeque(pending.filter { it.file !in mergedFiles })
+            pending = ArrayDeque(pending.filter { faceKey(it.file, it.ttcIndex) !in mergedKeys })
         }
         // Sequential cover walk to populate `resolved` cache. Most
         // codepoints now hit the parallel-loaded faces in `loaded`
@@ -330,11 +460,9 @@ internal class AndroidSystemFontResolver(
         // copy, no malloc + memcpy in JNI - the font header pages in
         // on the first hb_face_create call and glyph outlines page in
         // lazily during shape.
-        val face = runCatching { HbFace.from { path(meta.file.absolutePath) } }
+        val face = runCatching { HbFace.from { path(meta.file.absolutePath, meta.ttcIndex) } }
             .getOrNull() ?: return null
-        val hasColor = runCatching {
-            face.hasColorPaint() || face.hasColorLayers() || face.hasColorSvg()
-        }.getOrDefault(meta.likelyHasColor)
+        val hasColor = runCatching { face.hasDrawableColor() }.getOrDefault(meta.likelyHasColor)
         return Loaded(face = face, meta = meta, hasColor = hasColor)
     }
 
@@ -352,10 +480,10 @@ internal class AndroidSystemFontResolver(
      */
     private fun predictMetasForPrewarm(codepoints: IntArray): List<PendingCandidate> {
         if (pending.isEmpty()) return emptyList()
-        val seen = HashSet<File>()
+        val seen = HashSet<String>()
         val out = ArrayList<PendingCandidate>()
         fun addIfNew(meta: PendingCandidate) {
-            if (seen.add(meta.file)) out.add(meta)
+            if (seen.add(faceKey(meta.file, meta.ttcIndex))) out.add(meta)
         }
         for (cp in codepoints) {
             val hints = codepointToScriptHints(cp)
@@ -384,6 +512,41 @@ internal class AndroidSystemFontResolver(
                     .take(PREDICT_FILES_PER_CODEPOINT)
                     .forEach(::addIfNew)
             }
+        }
+        return out
+    }
+
+    /**
+     * Platform-pick-driven prediction (API 31+): resolve each codepoint
+     * via [PlatformFontPicker] (a shape call, no font I/O) and collect
+     * the distinct files minikin chose, so [prewarm] parallel-loads
+     * exactly what [fontFor]'s platform step will ask for. Skips
+     * codepoints already covered by [bundledEmoji] or an already-loaded
+     * face. Read-only on [pending] - the merge step after the parallel
+     * load removes whatever got loaded.
+     */
+    private suspend fun predictMetasViaPlatform(codepoints: IntArray): List<PendingCandidate> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return emptyList()
+        val seen = HashSet<String>()
+        val out = ArrayList<PendingCandidate>()
+        for (cp in codepoints) {
+            val emojiCp = match.preferColorEmoji && isLikelyEmoji(cp)
+            if (emojiCp) {
+                val bundled = bundledEmoji
+                if (bundled != null && sizelessFont(bundled).glyphIdForCodepoint(cp) != 0) continue
+            }
+            val picked = PlatformFontPicker.pick(
+                codepoint = cp,
+                style = style,
+                languages = match.languages,
+                emojiPresentation = emojiCp,
+            ) ?: continue
+            val file = picked.file ?: continue
+            val ttcIndex = picked.ttcIndex
+            if (loaded.any { it.meta.file == file && it.meta.ttcIndex == ttcIndex }) continue
+            if (!seen.add(faceKey(file, ttcIndex))) continue
+            val idx = pendingIndexOf(file, ttcIndex)
+            out.add(if (idx >= 0) pending[idx] else metaFromPlatformFont(picked, file, ttcIndex))
         }
         return out
     }
@@ -476,11 +639,9 @@ internal class AndroidSystemFontResolver(
         // NotoSansCJK.ttc) into a JVM ByteArray. The kernel pages in
         // the font header on hb_face_create and the glyph data lazily
         // during shape; no eager full-file read, no JVM heap copy.
-        val face = runCatching { HbFace.from { path(meta.file.absolutePath) } }
+        val face = runCatching { HbFace.from { path(meta.file.absolutePath, meta.ttcIndex) } }
             .getOrNull() ?: return null
-        val hasColor = runCatching {
-            face.hasColorPaint() || face.hasColorLayers() || face.hasColorSvg()
-        }.getOrDefault(meta.likelyHasColor)
+        val hasColor = runCatching { face.hasDrawableColor() }.getOrDefault(meta.likelyHasColor)
         val l = Loaded(face = face, meta = meta, hasColor = hasColor)
         loaded.add(l)
         return l
@@ -493,6 +654,7 @@ internal class AndroidSystemFontResolver(
             runCatching { l.face.close() }
         }
         loaded.clear()
+        bundledEmoji = null
         pending = ArrayDeque()
         resolved.clear()
     }
@@ -526,10 +688,88 @@ private fun rankPending(
             val ai = if (a.italic == style.italic) 0 else 1
             val bi = if (b.italic == style.italic) 0 else 1
             if (ai != bi) return@Comparator ai - bi
-            abs(a.weight - style.weight) - abs(b.weight - style.weight)
+            val dw = abs(a.weight - style.weight) - abs(b.weight - style.weight)
+            if (dw != 0) return@Comparator dw
+            // Deterministic total order - see the loaded-rank comparator in
+            // [AndroidSystemFontResolver] for why this matters (the input
+            // Set's iteration order is random per process).
+            val byPath = a.file.path.compareTo(b.file.path)
+            if (byPath != 0) return@Comparator byPath
+            a.ttcIndex - b.ttcIndex
         },
     )
 }
+
+/**
+ * Wraps [TextRunShaper] (API 31+) to ask minikin - the engine behind the
+ * platform text stack and Compose Text - which system font it would use
+ * for a codepoint. Using the platform's own matcher gives exact fallback
+ * parity with native text rendering and sidesteps every ordering problem
+ * in `SystemFonts.getAvailableFonts()` (which iterates an IdentityHashMap
+ * and is randomly ordered per process). It also handles OEM fallback
+ * chains and Android 13+ updatable fonts for free.
+ *
+ * API 31+ only ([TextRunShaper] doesn't exist before S) - every caller
+ * must gate on `Build.VERSION.SDK_INT >= Build.VERSION_CODES.S` before
+ * touching this object.
+ */
+private object PlatformFontPicker {
+
+    /** VS16 - "render the preceding character with emoji presentation". */
+    private const val EMOJI_VARIATION_SELECTOR = 0xFE0F
+
+    /**
+     * Shape [codepoint] with a paint configured from [style] and
+     * [languages], and return the font minikin picked. Returns `null`
+     * when the platform only has a notdef for the codepoint - callers
+     * should fall back to heuristics rather than render tofu from the
+     * picked font. Any platform hiccup is swallowed to `null` for the
+     * same reason.
+     *
+     * [emojiPresentation] appends VS16 to the probe. Text-default emoji
+     * like U+2764 (red heart) itemize to a monochrome symbols font when
+     * probed alone, but real input carries `U+2764 U+FE0F` and renders
+     * from the emoji font - probing the same sequence keeps the pick
+     * aligned with what the platform actually displays.
+     */
+    fun pick(
+        codepoint: Int,
+        style: FontStyleHint,
+        languages: List<HbLanguage>,
+        emojiPresentation: Boolean = false,
+    ): android.graphics.fonts.Font? = runCatching {
+        val base = Character.toChars(codepoint)
+        val chars = if (emojiPresentation) {
+            base + EMOJI_VARIATION_SELECTOR.toChar()
+        } else {
+            base
+        }
+        val paint = Paint().apply {
+            typeface = Typeface.create(Typeface.DEFAULT, style.weight, style.italic)
+            val locales = languages.mapNotNull { lang ->
+                runCatching { Locale.forLanguageTag(lang.bcp47) }.getOrNull()
+                    ?.takeIf { it.language.isNotEmpty() }
+            }
+            if (locales.isNotEmpty()) textLocales = LocaleList(*locales.toTypedArray())
+        }
+        val glyphs = TextRunShaper.shapeTextRun(
+            chars, 0, chars.size, 0, chars.size, 0f, 0f, false, paint,
+        )
+        if (glyphs.glyphCount() <= 0) return@runCatching null
+        if (glyphs.getGlyphId(0) == 0) return@runCatching null
+        glyphs.getFont(0)
+    }.getOrNull()
+}
+
+/**
+ * Every color format the draw pipeline can rasterize on this platform:
+ * COLR v1 paint trees, COLR v0 layers, OT-SVG, and (via the paint
+ * pipeline's PAINT_IMAGE ops) CBDT/sbix PNG bitmaps - the format of most
+ * OS emoji fonts. Used both for emoji ranking and as the drawability
+ * gate on platform-picked emoji fonts.
+ */
+private fun HbFace.hasDrawableColor(): Boolean =
+    hasColorPaint() || hasColorLayers() || hasColorSvg() || hasColorPng()
 
 /** Filename-based color guess so we can rank emoji-likely fonts first without loading them. */
 private fun likelyHasColorFromName(name: String): Boolean {
@@ -581,6 +821,7 @@ internal actual fun createSystemFontResolver(match: SystemFallback.Match): Syste
             italic = style.slant == android.graphics.fonts.FontStyle.FONT_SLANT_ITALIC,
             likelyHasColor = likelyHasColorFromName(file.name),
             languageHints = hints,
+            ttcIndex = font.ttcIndex,
         )
     }
 
