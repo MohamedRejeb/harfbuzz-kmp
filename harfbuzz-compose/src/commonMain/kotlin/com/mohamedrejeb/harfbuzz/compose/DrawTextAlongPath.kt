@@ -13,7 +13,9 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.rotateRad
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
+import com.mohamedrejeb.harfbuzz.core.HbDirection
 import com.mohamedrejeb.harfbuzz.core.HbFont
+import com.mohamedrejeb.harfbuzz.core.ShapedRun
 import kotlin.math.PI
 
 /**
@@ -53,8 +55,41 @@ public fun DrawScope.drawTextAlongPath(
     autoFlip: Boolean = false,
     forceForegroundColor: Boolean = false,
     shadow: Shadow? = null,
+    /**
+     * Optional styled source. Spans resolve a per-glyph fill color using
+     * the same cluster mapping as [drawShapedText]'s styled path, so
+     * tashkeel / per-range coloring works on path text too. Only the
+     * span's *color* applies here (brush spans fall back to their
+     * resolved color); color glyphs (emoji) paint their own colors and
+     * are unaffected. `styledText.text` MUST equal the shaped source
+     * string of [measured].
+     */
+    styledText: StyledText? = null,
 ) {
     if (measured.isEmpty) return
+
+    val resolver = if (styledText != null && styledText.spans.isNotEmpty()) {
+        PaintResolver(
+            spans = styledText.spans,
+            clusterEnds = clusterEndArray(measured.paragraph, measured.textLength),
+            clusterText = styledText.text,
+            defaultColor = color,
+            defaultBrush = null,
+        )
+    } else {
+        null
+    }
+    // Per-run cluster indexing for the resolver, computed once per run
+    // instead of per glyph.
+    val clusterIndexingByRun = if (resolver != null) {
+        HashMap<ShapedRun, Pair<IntArray, IntArray>>().apply {
+            for (run in measured.paragraph.runs) {
+                this[run] = clusterIndexingForRun(run.glyphs, run.direction == HbDirection.RTL)
+            }
+        }
+    } else {
+        null
+    }
 
     // Resolve per-run caches up-front for every font that contributes to
     // the paragraph so the per-glyph emit lambda hits one constant-time
@@ -109,12 +144,23 @@ public fun DrawScope.drawTextAlongPath(
                             left = -pos.xAdvance / 2f + pos.xOffset,
                             top = -pos.yOffset,
                         ) {
+                            val glyphColor = if (resolver != null && clusterIndexingByRun != null) {
+                                val (glyphsInCluster, indexInCluster) =
+                                    clusterIndexingByRun.getValue(p.run)
+                                resolver.resolve(
+                                    clusterStart = p.run.glyphs[p.glyphIndexInRun].cluster,
+                                    glyphIndexInCluster = indexInCluster[p.glyphIndexInRun],
+                                    glyphsInCluster = glyphsInCluster[p.glyphIndexInRun],
+                                ).color
+                            } else {
+                                color
+                            }
                             drawOneGlyphAtOrigin(
                                 runFont = p.runFont,
                                 sizePx = measured.sizePx,
                                 caches = caches,
                                 glyphId = p.run.glyphs[p.glyphIndexInRun].glyphId,
-                                color = color,
+                                color = glyphColor,
                                 alpha = alpha,
                                 style = style,
                                 blendMode = blendMode,

@@ -217,9 +217,10 @@ public fun DrawScope.drawArcText(
 
     if (measured.hasColorGlyphs) {
         // Color-glyph escape: build the arc Path and route through
-        // drawTextAlongPath using the outer default paint. Spans
-        // don't reach color glyphs through this escape; drawArcText
-        // (uniform color) does the same when emoji are present.
+        // drawTextAlongPath, which places each glyph individually
+        // (color glyphs can't join a warped monochrome silhouette).
+        // The styled spans travel along so tashkeel / range coloring
+        // keeps working on outline glyphs when emoji share the arc.
         val arcPath = Path().apply {
             addArc(
                 oval = Rect(
@@ -246,6 +247,7 @@ public fun DrawScope.drawArcText(
             autoFlip = false,
             forceForegroundColor = false,
             shadow = shadow,
+            styledText = styledText,
         )
         return
     }
@@ -832,7 +834,7 @@ private fun DrawScope.drawArcBucket(
  * same source-position model on the arc as it does on a flat
  * baseline.
  */
-private fun clusterIndexingForRun(
+internal fun clusterIndexingForRun(
     glyphs: List<com.mohamedrejeb.harfbuzz.core.GlyphInfo>,
     isRtl: Boolean,
 ): Pair<IntArray, IntArray> {

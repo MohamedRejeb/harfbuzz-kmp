@@ -69,6 +69,27 @@ kotlin {
     }
 }
 
+// One-shot generator for the app's font-picker thumbnails. Renders every
+// font named in thumbgen/thumb-names.tsv to build/font-thumbs/out/.
+// Optional: -PthumbFilter=Ps1,Ps2 to render a subset for spot checks.
+tasks.register<JavaExec>("generateFontThumbnails") {
+    group = "thumbgen"
+    description = "Render font-picker thumbnails from thumbgen/thumb-names.tsv"
+    val jvmMainCompilation = kotlin.targets.getByName("jvm")
+        .compilations.getByName("main")
+    classpath = files(
+        jvmMainCompilation.output.allOutputs,
+        jvmMainCompilation.runtimeDependencyFiles,
+    )
+    mainClass.set("com.mohamedrejeb.harfbuzz.tools.FontThumbnailGeneratorKt")
+    workingDir = projectDir
+    args = buildList {
+        add(findProperty("thumbJobs")?.toString() ?: "thumbgen/thumb-names.tsv")
+        add(findProperty("thumbOut")?.toString() ?: "build/font-thumbs")
+        findProperty("thumbFilter")?.let { add(it.toString()) }
+    }
+}
+
 // Forward the regeneration flag from the Gradle JVM into the forked test
 // JVM so `-Dkotlin.harfbuzz.regenerate.goldens=true` actually reaches the
 // screenshot harness.
