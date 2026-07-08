@@ -1,5 +1,7 @@
 package com.mohamedrejeb.harfbuzz.core
 
+import kotlin.concurrent.Volatile
+
 /**
  * Shared identity `IntArray(n) { it }` cache.
  *
@@ -26,27 +28,41 @@ package com.mohamedrejeb.harfbuzz.core
 internal object IdentityIntArrayCache {
     private const val MAX_ENTRIES = 64
     private val EMPTY = IntArray(0)
-    private val entries = LinkedHashMap<Int, IntArray>()
+
+    /**
+     * Copy-on-write snapshot. Consumers shape paragraphs from multiple
+     * threads concurrently, so this global cache cannot assume the
+     * single-threaded shaping dispatcher (seen in production as
+     * ConcurrentModificationException from [get]). Readers only touch
+     * the immutable published snapshot; a writer copies, mutates the
+     * copy, and republishes. Racing writers lose at worst one cache
+     * entry (a redundant allocation next call) — never a corrupt map.
+     */
+    @Volatile
+    private var entries: LinkedHashMap<Int, IntArray> = LinkedHashMap()
 
     fun get(length: Int): IntArray {
         if (length <= 0) return EMPTY
-        entries[length]?.let { return it }
-        if (entries.size >= MAX_ENTRIES) {
-            val it = entries.entries.iterator()
+        val snapshot = entries
+        snapshot[length]?.let { return it }
+        val next = LinkedHashMap(snapshot)
+        if (next.size >= MAX_ENTRIES) {
+            val it = next.entries.iterator()
             if (it.hasNext()) {
                 it.next()
                 it.remove()
             }
         }
         val arr = IntArray(length) { it }
-        entries[length] = arr
+        next[length] = arr
+        entries = next
         return arr
     }
 
     internal fun sizeForTest(): Int = entries.size
 
     internal fun clearForTest() {
-        entries.clear()
+        entries = LinkedHashMap()
     }
 }
 

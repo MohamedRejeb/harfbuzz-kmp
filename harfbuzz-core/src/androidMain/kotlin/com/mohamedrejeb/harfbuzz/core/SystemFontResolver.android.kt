@@ -10,6 +10,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.util.Locale
 import kotlin.math.abs
@@ -125,6 +127,17 @@ internal class AndroidSystemFontResolver(
         var sizelessFont: HbFont? = null
     }
 
+    /**
+     * Serialises every access to the resolver's mutable state ([pending],
+     * [loaded], [resolved], [bundledEmoji], [pendingEmojiBootstrap] and
+     * `Loaded.sizelessFont`). Consumers shape different paragraphs from
+     * concurrent coroutines that all funnel cover-walk misses into the
+     * same resolver — seen in production as ConcurrentModificationException
+     * in [pickNextPending], ArrayIndexOutOfBounds in [tryLoad]'s
+     * `loaded.add`, and NPEs on half-published [Loaded] entries.
+     */
+    private val stateMutex = Mutex()
+
     /** Pre-ranked metadata queue; `pending[0]` is the best candidate to try first. */
     private var pending: ArrayDeque<PendingCandidate> = ArrayDeque(pendingInit)
     /** Faces successfully loaded so far, in load order. */
@@ -230,7 +243,11 @@ internal class AndroidSystemFontResolver(
     override suspend fun fontFor(codepoint: Int): HbFont? =
         fontFor(codepoint, emojiPresentation = false)
 
-    override suspend fun fontFor(codepoint: Int, emojiPresentation: Boolean): HbFont? {
+    override suspend fun fontFor(codepoint: Int, emojiPresentation: Boolean): HbFont? =
+        stateMutex.withLock { fontForLocked(codepoint, emojiPresentation) }
+
+    /** Body of [fontFor]; must be called with [stateMutex] held. */
+    private suspend fun fontForLocked(codepoint: Int, emojiPresentation: Boolean): HbFont? {
         val italic = style.italic
         val cacheKey = key(codepoint, italic, emojiPresentation)
         if (resolved.containsKey(cacheKey)) {
@@ -401,11 +418,10 @@ internal class AndroidSystemFontResolver(
      * via the in-memory `loaded` list and skips both the I/O and parse.
      *
      * What we don't change. The resolver's mutable state (`pending`,
-     * `loaded`, `resolved`) is still touched single-threaded - parallel
-     * work happens entirely outside the suspend context that mutates
-     * resolver state, and the merge step runs back on the caller's
-     * dispatcher after `coroutineScope` resumes. The steady-state
-     * `fontFor` path is unchanged.
+     * `loaded`, `resolved`) is only touched under [stateMutex] - parallel
+     * work happens entirely in [tryLoadStandalone], which reads no
+     * resolver state, and the merge step re-acquires the lock. The
+     * steady-state `fontFor` path is unchanged.
      *
      * Prediction policy. For each codepoint we take the first 2
      * pending entries whose script hints match (or top-2 emoji-likely
@@ -416,10 +432,11 @@ internal class AndroidSystemFontResolver(
      * cover walk would otherwise probe sequentially.
      */
     override suspend fun prewarm(codepoints: IntArray) {
-        seedEmojiFontIfPending()
-        val predicted =
+        val predicted = stateMutex.withLock {
+            seedEmojiFontIfPending()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) predictMetasViaPlatform(codepoints)
             else predictMetasForPrewarm(codepoints)
+        }
         if (predicted.isEmpty()) {
             for (cp in codepoints) fontFor(cp)
             return
@@ -435,20 +452,22 @@ internal class AndroidSystemFontResolver(
                 async(Dispatchers.IO) { tryLoadStandalone(meta) }
             }.awaitAll()
         }.filterNotNull()
-        // Merge into resolver state. Safe because we're back on the
-        // single-threaded suspend context that the caller invoked
-        // `prewarm` on, and `loaded` / `pending` haven't been touched
-        // since we read `predicted`. Dedupe `pending` so the sequential
-        // walk doesn't re-load anything we already have.
-        val mergedKeys = HashSet<String>(loadedFaces.size)
-        for (l in loadedFaces) {
-            loaded.add(l)
-            mergedKeys.add(faceKey(l.meta.file, l.meta.ttcIndex))
-        }
-        if (mergedKeys.isNotEmpty()) {
-            // ArrayDeque has no `removeIf`; rebuild it. `pending` typically
-            // has ~200 entries, so this is a microsecond-scale rebuild.
-            pending = ArrayDeque(pending.filter { faceKey(it.file, it.ttcIndex) !in mergedKeys })
+        // Merge into resolver state under [stateMutex] — concurrent shape
+        // calls may be walking `loaded` / draining `pending` right now.
+        // Dedupe against both lists so the sequential walk doesn't re-load
+        // anything a racing `fontFor` already loaded while we were parsing.
+        stateMutex.withLock {
+            val mergedKeys = HashSet<String>(loadedFaces.size)
+            for (l in loadedFaces) {
+                if (loaded.any { it.meta.file == l.meta.file && it.meta.ttcIndex == l.meta.ttcIndex }) continue
+                loaded.add(l)
+                mergedKeys.add(faceKey(l.meta.file, l.meta.ttcIndex))
+            }
+            if (mergedKeys.isNotEmpty()) {
+                // ArrayDeque has no `removeIf`; rebuild it. `pending` typically
+                // has ~200 entries, so this is a microsecond-scale rebuild.
+                pending = ArrayDeque(pending.filter { faceKey(it.file, it.ttcIndex) !in mergedKeys })
+            }
         }
         // Sequential cover walk to populate `resolved` cache. Most
         // codepoints now hit the parallel-loaded faces in `loaded`
