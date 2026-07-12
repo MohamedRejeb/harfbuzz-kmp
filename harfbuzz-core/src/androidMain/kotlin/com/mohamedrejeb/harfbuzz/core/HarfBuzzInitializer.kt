@@ -5,9 +5,10 @@ import androidx.startup.Initializer
 import kotlin.coroutines.EmptyCoroutineContext
 
 /**
- * androidx.startup [Initializer] that pre-loads `libharfbuzz_jni.so` on
- * the HarfBuzz background dispatcher when the app process starts,
- * before the first composable mounts.
+ * androidx.startup [Initializer] that pre-loads `libharfbuzz_jni.so`
+ * and the [SystemFontCandidates] metadata snapshot on the HarfBuzz
+ * background dispatcher when the app process starts, before the first
+ * composable mounts.
  *
  * Without this, the first call to [harfBuzzInit] from a `LaunchedEffect`
  * pays the full `System.loadLibrary` cost (30–80 ms on Android cold
@@ -41,6 +42,12 @@ public class HarfBuzzInitializer : Initializer<Unit> {
         HarfBuzzAppContext.set(context.applicationContext)
         harfbuzzDispatcher.dispatch(EmptyCoroutineContext) {
             runCatching { HarfbuzzNative.ensureLoaded() }
+            // Pre-pay the SystemFonts metadata walk here too: on API 29/30
+            // the framework hashes every font file's full buffer during
+            // `getAvailableFonts()` (seconds on low-end devices), and the
+            // first system-fallback shape - possibly issued from the main
+            // thread - would otherwise pay it inline. See [SystemFontCandidates].
+            runCatching { SystemFontCandidates.warmUp() }
         }
     }
 

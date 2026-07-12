@@ -47,10 +47,10 @@ public class HbFontStack(
      * (and other transient stack rebuilds) don't trigger re-loading the
      * host platform's fonts. See [sharedSystemResolverFor].
      *
-     * Not thread-safe: [shapeParagraph] is documented as not safe to call
-     * concurrently for the same stack, mirroring the rest of the API. The
-     * shared cache is read on the harfbuzzDispatcher (single-threaded) so
-     * concurrent reads aren't a concern in normal usage either.
+     * The shared cache tolerates concurrent lookups from any thread
+     * (copy-on-write, see [sharedSystemResolverFor]); per-stack shaping
+     * is still documented as not safe to call concurrently for the same
+     * stack, mirroring the rest of the API.
      */
     internal fun systemResolverOrNull(): SystemFontResolver? {
         val match = system as? SystemFallback.Match ?: return null
@@ -240,11 +240,18 @@ private data class SystemResolverCacheKey(
  * overhead measured against the savings: every recompose that
  * rebuilds an HbFontStack used to throw away every loaded fallback.
  *
- * Access is guarded only by the harfbuzzDispatcher's single-threaded
- * execution; callers that touch this from elsewhere must serialize
- * themselves.
+ * Copy-on-write behind a `@Volatile` immutable map: production shapes
+ * from the harfbuzz-bg dispatcher AND, in some integrations, straight
+ * from the main thread (seen in ANR traces entering
+ * [sharedSystemResolverFor] via app-side measure calls), so lookups
+ * race. Reads are lock-free; a miss re-checks after building so racing
+ * builders converge on one instance per key. A concurrent insert of a
+ * *different* key can drop this insert from the published map - the
+ * next lookup just rebuilds it, which is cheap now that the expensive
+ * platform font walk is snapshotted process-wide on Android.
  */
-private val sharedResolvers: MutableMap<SystemResolverCacheKey, SystemFontResolver> = HashMap()
+@kotlin.concurrent.Volatile
+private var sharedResolvers: Map<SystemResolverCacheKey, SystemFontResolver> = emptyMap()
 
 internal fun sharedSystemResolverFor(match: SystemFallback.Match): SystemFontResolver? {
     // [match.style] is non-null at this point - HbFontStack.systemResolverOrNull
@@ -253,7 +260,15 @@ internal fun sharedSystemResolverFor(match: SystemFallback.Match): SystemFontRes
     val key = SystemResolverCacheKey(style, match.preferColorEmoji, match.languages)
     sharedResolvers[key]?.let { return it }
     val resolver = createSystemFontResolver(match) ?: return null
-    sharedResolvers[key] = resolver
+    // Re-check before publishing: a racing thread may have built and
+    // published a resolver for this key while we were constructing ours.
+    // Adopting theirs (and closing our still-empty duplicate - no faces
+    // are loaded at construction) keeps one face cache per key.
+    sharedResolvers[key]?.let { existing ->
+        runCatching { resolver.close() }
+        return existing
+    }
+    sharedResolvers = sharedResolvers + (key to resolver)
     return resolver
 }
 
@@ -267,11 +282,13 @@ internal fun seedSharedSystemResolverForTest(
     resolver: SystemFontResolver,
 ) {
     val style = match.style ?: FontStyleHint()
-    sharedResolvers[SystemResolverCacheKey(style, match.preferColorEmoji, match.languages)] = resolver
+    sharedResolvers = sharedResolvers +
+        (SystemResolverCacheKey(style, match.preferColorEmoji, match.languages) to resolver)
 }
 
 /** Drop every cached resolver so tests don't leak state into one another. */
 internal fun clearSharedSystemResolverCacheForTest() {
-    sharedResolvers.values.forEach { runCatching { it.close() } }
-    sharedResolvers.clear()
+    val dropped = sharedResolvers
+    sharedResolvers = emptyMap()
+    dropped.values.forEach { runCatching { it.close() } }
 }

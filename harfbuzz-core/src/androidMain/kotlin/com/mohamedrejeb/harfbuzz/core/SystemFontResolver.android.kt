@@ -831,26 +831,69 @@ private fun readLocaleList(font: android.graphics.fonts.Font): Set<String> {
     return tags
 }
 
-internal actual fun createSystemFontResolver(match: SystemFallback.Match): SystemFontResolver? {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+/**
+ * Process-wide snapshot of the `SystemFonts.getAvailableFonts()` walk.
+ *
+ * The walk itself is the expensive part, not our metadata mapping:
+ * before API 31 the framework does not cache `getAvailableFonts()`, and
+ * on API 29/30 it deduplicates fonts into a `HashSet` whose
+ * `Font.hashCode()` hashes the font's **entire mapped ByteBuffer** -
+ * hundreds of MB of hashing across ~200 system fonts, on every call.
+ * The resolver pool keys resolvers by (style, preferColorEmoji,
+ * languages), so every new key used to re-pay that walk; seen in
+ * production as multi-second main-thread ANRs on Android 11 devices
+ * (measureLines -> createSystemFontResolver -> getAvailableFonts).
+ *
+ * The set of installed system fonts only changes with an OS update, so
+ * walk once per process and hand every resolver the same immutable
+ * metadata list - each resolver still re-ranks its own copy per key
+ * (a cheap sort of ~200 primitives). [HarfBuzzInitializer] pre-warms
+ * this on the harfbuzz-bg dispatcher at process start so even a first
+ * shape call issued from the main thread finds the snapshot ready.
+ */
+internal object SystemFontCandidates {
+
+    @Volatile private var cached: List<AndroidSystemFontResolver.PendingCandidate>? = null
+
+    fun get(): List<AndroidSystemFontResolver.PendingCandidate> {
+        cached?.let { return it }
+        synchronized(this) {
+            cached?.let { return it }
+            return walk().also { cached = it }
+        }
+    }
+
+    /** Pay the walk cost now, off whatever thread calls this. No-op below API 29. */
+    fun warmUp() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) get()
+    }
 
     // Walk SystemFonts ONCE to build lightweight metadata. No file reads,
     // no HbFace creation - just primitives we can sort cheaply.
-    val rawCandidates = SystemFonts.getAvailableFonts().mapNotNull { font ->
-        val file = font.file ?: return@mapNotNull null
-        val style = font.style
-        val nameHints = inferLanguageHintsFromPath(file.nameWithoutExtension.lowercase())
-        val platformLangs = readLocaleList(font)
-        val hints = if (platformLangs.isNotEmpty()) platformLangs else nameHints
-        AndroidSystemFontResolver.PendingCandidate(
-            file = file,
-            weight = style.weight,
-            italic = style.slant == android.graphics.fonts.FontStyle.FONT_SLANT_ITALIC,
-            likelyHasColor = likelyHasColorFromName(file.name),
-            languageHints = hints,
-            ttcIndex = font.ttcIndex,
-        )
-    }
+    private fun walk(): List<AndroidSystemFontResolver.PendingCandidate> =
+        SystemFonts.getAvailableFonts().mapNotNull { font ->
+            val file = font.file ?: return@mapNotNull null
+            val style = font.style
+            val nameHints = inferLanguageHintsFromPath(file.nameWithoutExtension.lowercase())
+            val platformLangs = readLocaleList(font)
+            val hints = if (platformLangs.isNotEmpty()) platformLangs else nameHints
+            AndroidSystemFontResolver.PendingCandidate(
+                file = file,
+                weight = style.weight,
+                italic = style.slant == android.graphics.fonts.FontStyle.FONT_SLANT_ITALIC,
+                likelyHasColor = likelyHasColorFromName(file.name),
+                languageHints = hints,
+                ttcIndex = font.ttcIndex,
+            )
+        }
+}
+
+internal actual fun createSystemFontResolver(match: SystemFallback.Match): SystemFontResolver? {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+
+    // Process-wide metadata snapshot - the expensive SystemFonts walk
+    // happens at most once per process. See [SystemFontCandidates].
+    val rawCandidates = SystemFontCandidates.get()
 
     // Pre-rank with a "color preferred" bias true so emoji-likely fonts come
     // first by default - the per-codepoint resolver re-ranks already-loaded
