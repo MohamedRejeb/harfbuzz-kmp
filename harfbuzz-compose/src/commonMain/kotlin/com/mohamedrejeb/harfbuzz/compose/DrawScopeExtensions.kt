@@ -20,7 +20,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import com.mohamedrejeb.harfbuzz.core.ColorLayer
@@ -60,6 +59,10 @@ import com.mohamedrejeb.harfbuzz.core.replay
  * The shadow follows [style], so a stroked text gets a stroked shadow.
  * For color glyphs the shadow uses the silhouette only, which matches
  * Compose's `BasicText` `TextStyle.shadow` convention.
+ *
+ * [glyphEffects], when non-null, supplies a per-glyph alpha / translate /
+ * scale adjustment applied at draw time (glyphs with effect alpha at or
+ * below zero are skipped). Null keeps the static render path unchanged.
  */
 public fun DrawScope.drawShapedText(
     measured: MeasuredText,
@@ -70,6 +73,7 @@ public fun DrawScope.drawShapedText(
     blendMode: BlendMode = DrawScope.DefaultBlendMode,
     forceForegroundColor: Boolean = false,
     shadow: Shadow? = null,
+    glyphEffects: GlyphEffectProvider? = null,
 ) {
     drawShapedTextInternal(
         measured = measured,
@@ -82,6 +86,7 @@ public fun DrawScope.drawShapedText(
         forceForegroundColor = forceForegroundColor,
         shadow = shadow,
         spacingScale = 1f,
+        glyphEffects = glyphEffects,
     )
 }
 
@@ -100,6 +105,11 @@ public fun DrawScope.drawShapedText(
  * Pass [forceForegroundColor] = true to route color-font glyphs through
  * the silhouette outline as well, making the brush paint every glyph
  * (including emoji silhouettes).
+ *
+ * With a non-null [glyphEffects] the combined path is split into one
+ * union per quantized effect alpha so per-glyph fades survive the
+ * single-shader draw; glyphs with the identity effect all land in the
+ * default bucket, keeping the fast path a single union.
  */
 public fun DrawScope.drawShapedText(
     measured: MeasuredText,
@@ -110,6 +120,7 @@ public fun DrawScope.drawShapedText(
     blendMode: BlendMode = DrawScope.DefaultBlendMode,
     forceForegroundColor: Boolean = false,
     shadow: Shadow? = null,
+    glyphEffects: GlyphEffectProvider? = null,
 ) {
     drawShapedTextInternal(
         measured = measured,
@@ -122,6 +133,7 @@ public fun DrawScope.drawShapedText(
         forceForegroundColor = forceForegroundColor,
         shadow = shadow,
         spacingScale = 1f,
+        glyphEffects = glyphEffects,
     )
 }
 
@@ -155,6 +167,7 @@ public fun DrawScope.drawShapedText(
     blendMode: BlendMode = DrawScope.DefaultBlendMode,
     forceForegroundColor: Boolean = false,
     shadow: Shadow? = null,
+    glyphEffects: GlyphEffectProvider? = null,
 ) {
     if (styledText.spans.isEmpty()) {
         drawShapedTextInternal(
@@ -168,6 +181,7 @@ public fun DrawScope.drawShapedText(
             forceForegroundColor = forceForegroundColor,
             shadow = shadow,
             spacingScale = 1f,
+            glyphEffects = glyphEffects,
         )
         return
     }
@@ -182,6 +196,7 @@ public fun DrawScope.drawShapedText(
         blendMode = blendMode,
         forceForegroundColor = forceForegroundColor,
         shadow = shadow,
+        glyphEffects = glyphEffects,
     )
 }
 
@@ -207,6 +222,7 @@ public fun DrawScope.drawShapedTextShadow(
     alpha: Float = 1f,
     style: DrawStyle = Fill,
     blendMode: BlendMode = DrawScope.DefaultBlendMode,
+    glyphEffects: GlyphEffectProvider? = null,
 ) {
     if (measured.isEmpty || shadow.color == Color.Transparent) return
     drawShadowPass(
@@ -218,6 +234,7 @@ public fun DrawScope.drawShapedTextShadow(
         style = style,
         blendMode = blendMode,
         spacingScale = 1f,
+        glyphEffects = glyphEffects,
     )
 }
 
@@ -529,6 +546,7 @@ internal fun DrawScope.drawShapedTextInternal(
     forceForegroundColor: Boolean,
     shadow: Shadow?,
     spacingScale: Float,
+    glyphEffects: GlyphEffectProvider? = null,
     /**
      * Caller-provided accumulator for monochrome silhouettes. When
      * non-null, the per-glyph silhouette is appended here and the
@@ -563,6 +581,7 @@ internal fun DrawScope.drawShapedTextInternal(
             blendMode = blendMode,
             shadow = shadow,
             spacingScale = spacingScale,
+            glyphEffects = glyphEffects,
             externalBrushPath = externalBrushPath,
         )
         return
@@ -578,6 +597,7 @@ internal fun DrawScope.drawShapedTextInternal(
             style = style,
             blendMode = blendMode,
             spacingScale = spacingScale,
+            glyphEffects = glyphEffects,
         )
     }
 
@@ -587,13 +607,22 @@ internal fun DrawScope.drawShapedTextInternal(
     // gradient to per-glyph bounds, repeating it. Color glyphs (SVG,
     // COLR v1, COLR v0 palette) still render in place with their
     // designed colors so emoji and SVG fonts paint unchanged.
+    //
+    // With per-glyph effects the single path cannot carry per-glyph
+    // alpha, so glyphs are grouped into one combined path per quantized
+    // effect alpha instead; identity effects all share the full-alpha
+    // bucket, so an all-identity provider still draws one union.
     val ownsBrushPath = externalBrushPath == null
-    val combinedBrushPath = externalBrushPath ?: if (brush != null) Path() else null
+    val useAlphaBuckets = brush != null && ownsBrushPath && glyphEffects != null
+    val combinedBrushPath = externalBrushPath ?: if (brush != null && !useAlphaBuckets) Path() else null
+    val brushAlphaBuckets = if (useAlphaBuckets) LinkedHashMap<Float, Path>() else null
 
     var loopX = penX
     var loopY = penY
 
-    for (run in measured.paragraph.runs) {
+    val runs = measured.paragraph.runs
+    for (runIndex in runs.indices) {
+        val run = runs[runIndex]
         // Each run is shaped by exactly one font (its [ShapedRun.font]).
         // Multi-font fallback puts every cluster span into its own run with
         // its own font, so cache lookups here MUST go through the run's
@@ -614,6 +643,13 @@ internal fun DrawScope.drawShapedTextInternal(
             val gid = run.glyphs[i].glyphId
             val pos = run.positions[i]
 
+            val effect = glyphEffects?.effectFor(runIndex, i, run.glyphs[i].cluster)
+            if (effect != null && effect.alpha <= 0f) {
+                localX += pos.xAdvance * spacingScale
+                localY += pos.yAdvance
+                continue
+            }
+
             // HarfBuzz emits y_offset / y_advance in Y-up convention;
             // Compose's translate top is Y-down, so negate. The glyph
             // is drawn at its full size; only the spacing between
@@ -621,29 +657,38 @@ internal fun DrawScope.drawShapedTextInternal(
             val drawX = localX + pos.xOffset
             val drawY = localY - pos.yOffset
 
-            if (combinedBrushPath != null) {
-                drawOneGlyphForBrush(
-                    runFont = runFont,
-                    sizePx = measured.sizePx,
-                    caches = caches,
-                    glyphId = gid,
-                    drawX = drawX,
-                    drawY = drawY,
-                    color = color,
-                    alpha = alpha,
-                    style = style,
-                    blendMode = blendMode,
-                    combinedPath = combinedBrushPath,
-                )
+            if (combinedBrushPath != null || brushAlphaBuckets != null) {
+                val targetPath = if (brushAlphaBuckets == null) {
+                    combinedBrushPath
+                } else {
+                    val bucketAlpha = quantizeGlyphEffectAlpha(effect?.alpha ?: 1f)
+                    if (bucketAlpha <= 0f) null else brushAlphaBuckets.getOrPut(bucketAlpha) { Path() }
+                }
+                if (targetPath != null) {
+                    drawOneGlyphForBrush(
+                        runFont = runFont,
+                        sizePx = measured.sizePx,
+                        caches = caches,
+                        glyphId = gid,
+                        drawX = drawX,
+                        drawY = drawY,
+                        color = color,
+                        alpha = alpha,
+                        style = style,
+                        blendMode = blendMode,
+                        combinedPath = targetPath,
+                        effect = effect,
+                    )
+                }
             } else {
-                translate(left = drawX, top = drawY) {
+                withGlyphEffectTransform(effect, drawX, drawY) {
                     drawOneGlyphAtOrigin(
                         runFont = runFont,
                         sizePx = measured.sizePx,
                         caches = caches,
                         glyphId = gid,
                         color = color,
-                        alpha = alpha,
+                        alpha = if (effect == null) alpha else alpha * effect.alpha,
                         style = style,
                         blendMode = blendMode,
                     )
@@ -665,6 +710,17 @@ internal fun DrawScope.drawShapedTextInternal(
             style = style,
             blendMode = blendMode,
         )
+    }
+    if (brushAlphaBuckets != null && brush != null) {
+        for ((bucketAlpha, path) in brushAlphaBuckets) {
+            drawCombinedBrushPath(
+                path = path,
+                brush = brush,
+                alpha = alpha * bucketAlpha,
+                style = style,
+                blendMode = blendMode,
+            )
+        }
     }
 }
 
@@ -690,6 +746,7 @@ private fun DrawScope.drawShapedTextStrokeInternal(
     blendMode: BlendMode,
     shadow: Shadow?,
     spacingScale: Float,
+    glyphEffects: GlyphEffectProvider?,
     externalBrushPath: Path?,
 ) {
     if (externalBrushPath != null) {
@@ -699,6 +756,22 @@ private fun DrawScope.drawShapedTextStrokeInternal(
             penY = penY,
             spacingScale = spacingScale,
             target = externalBrushPath,
+        )
+        return
+    }
+    if (glyphEffects != null) {
+        drawStrokeSilhouetteBuckets(
+            measured = measured,
+            penX = penX,
+            penY = penY,
+            color = color,
+            brush = brush,
+            alpha = alpha,
+            style = style,
+            blendMode = blendMode,
+            shadow = shadow,
+            spacingScale = spacingScale,
+            glyphEffects = glyphEffects,
         )
         return
     }
@@ -772,6 +845,127 @@ private fun accumulateLineSilhouette(
         }
         localPenX = localX
         localPenY = localY
+    }
+}
+
+/**
+ * Effect-aware counterpart of [accumulateLineSilhouette]: each glyph's
+ * silhouette gets its effect transform applied BEFORE any union, and
+ * glyphs are grouped into one path per quantized effect alpha (see
+ * [quantizeGlyphEffectAlpha]). Glyphs whose quantized alpha is zero or
+ * below are dropped. Identity effects share the full-alpha bucket, so a
+ * provider that returns [GlyphEffect.NONE] everywhere produces a single
+ * bucket equivalent to the plain accumulation. Iteration order of the
+ * returned map is first-seen bucket order.
+ */
+internal fun accumulateLineSilhouetteBuckets(
+    measured: MeasuredText,
+    penX: Float,
+    penY: Float,
+    spacingScale: Float,
+    glyphEffects: GlyphEffectProvider,
+): LinkedHashMap<Float, Path> {
+    val buckets = LinkedHashMap<Float, Path>()
+    var localPenX = penX
+    var localPenY = penY
+    val runs = measured.paragraph.runs
+    for (runIndex in runs.indices) {
+        val run = runs[runIndex]
+        val runFont = run.font ?: measured.font
+        val flipped = measured.flippedPathsByFont[runFont] ?: emptyMap()
+        var localX = localPenX
+        var localY = localPenY
+        for (i in run.glyphs.indices) {
+            val gid = run.glyphs[i].glyphId
+            val pos = run.positions[i]
+            val effect = glyphEffects.effectFor(runIndex, i, run.glyphs[i].cluster)
+            val bucketAlpha = quantizeGlyphEffectAlpha(effect.alpha)
+            if (bucketAlpha > 0f) {
+                val p = flipped[gid]
+                if (p != null) {
+                    val target = buckets.getOrPut(bucketAlpha) { Path() }
+                    appendGlyphPathWithEffect(
+                        target = target,
+                        glyph = p,
+                        drawX = localX + pos.xOffset,
+                        drawY = localY - pos.yOffset,
+                        effect = effect,
+                    )
+                }
+            }
+            localX += pos.xAdvance * spacingScale
+            localY += pos.yAdvance
+        }
+        localPenX = localX
+        localPenY = localY
+    }
+    return buckets
+}
+
+/**
+ * Stroke render path under per-glyph effects. Mirrors the single-union
+ * stroke flow but draws one unified silhouette per quantized-alpha
+ * bucket: shadows for every bucket first (so no stroke ends up under a
+ * sibling bucket's shadow), then the stroked silhouettes. Splitting the
+ * union by alpha can expose seams between adjacent glyphs that sit in
+ * different buckets; that is inherent to per-glyph fading of a joined
+ * script and only shows transiently on the fading glyph.
+ */
+private fun DrawScope.drawStrokeSilhouetteBuckets(
+    measured: MeasuredText,
+    penX: Float,
+    penY: Float,
+    color: Color,
+    brush: Brush?,
+    alpha: Float,
+    style: DrawStyle,
+    blendMode: BlendMode,
+    shadow: Shadow?,
+    spacingScale: Float,
+    glyphEffects: GlyphEffectProvider,
+) {
+    val buckets = accumulateLineSilhouetteBuckets(
+        measured = measured,
+        penX = penX,
+        penY = penY,
+        spacingScale = spacingScale,
+        glyphEffects = glyphEffects,
+    )
+    if (buckets.isEmpty()) return
+    val unified = ArrayList<Pair<Float, Path>>(buckets.size)
+    for ((bucketAlpha, raw) in buckets) {
+        if (raw.isEmpty) continue
+        unified.add(bucketAlpha to raw.toUnifiedSilhouette())
+    }
+    if (shadow != null) {
+        for ((bucketAlpha, silhouette) in unified) {
+            drawShadowOnPath(
+                silhouette = silhouette,
+                shadow = shadow,
+                alpha = alpha * bucketAlpha,
+                style = style,
+                blendMode = blendMode,
+            )
+        }
+    }
+    for ((bucketAlpha, silhouette) in unified) {
+        if (brush != null) {
+            drawCombinedBrushPath(
+                path = silhouette,
+                brush = brush,
+                alpha = alpha * bucketAlpha,
+                style = style,
+                blendMode = blendMode,
+            )
+        } else {
+            drawPath(
+                path = silhouette,
+                color = color,
+                alpha = alpha * bucketAlpha,
+                style = style,
+                blendMode = blendMode,
+            )
+        }
     }
 }
 
@@ -881,6 +1075,7 @@ internal fun DrawScope.drawShadowPass(
     style: DrawStyle,
     blendMode: BlendMode,
     spacingScale: Float,
+    glyphEffects: GlyphEffectProvider? = null,
 ) {
     val paint = Paint().apply {
         color = shadow.color
@@ -891,6 +1086,26 @@ internal fun DrawScope.drawShadowPass(
         configureShadowBlur(this, shadow.blurRadius)
     }
     if (style is Stroke) {
+        if (glyphEffects != null) {
+            // Per-glyph effects: same quantized-alpha bucketing as the
+            // stroke pass so the shadow tracks each glyph's transform
+            // and fade instead of shadowing the full static line.
+            val buckets = accumulateLineSilhouetteBuckets(
+                measured = measured,
+                penX = penX,
+                penY = penY,
+                spacingScale = spacingScale,
+                glyphEffects = glyphEffects,
+            )
+            drawIntoCanvas { canvas ->
+                for ((bucketAlpha, raw) in buckets) {
+                    if (raw.isEmpty) continue
+                    paint.alpha = alpha * shadow.color.alpha * bucketAlpha
+                    canvas.drawPath(raw.toUnifiedSilhouette(), paint)
+                }
+            }
+            return
+        }
         val raw = Path()
         accumulateLineSilhouette(
             measured = measured,
@@ -907,7 +1122,9 @@ internal fun DrawScope.drawShadowPass(
     drawIntoCanvas { canvas ->
         var localPenX = penX
         var localPenY = penY
-        for (run in measured.paragraph.runs) {
+        val runs = measured.paragraph.runs
+        for (runIndex in runs.indices) {
+            val run = runs[runIndex]
             val runFont = run.font ?: measured.font
             val flipped = measured.flippedPathsByFont[runFont] ?: emptyMap()
             var localX = localPenX
@@ -915,12 +1132,26 @@ internal fun DrawScope.drawShadowPass(
             for (i in run.glyphs.indices) {
                 val gid = run.glyphs[i].glyphId
                 val pos = run.positions[i]
+                val effect = glyphEffects?.effectFor(runIndex, i, run.glyphs[i].cluster)
+                if (effect != null && effect.alpha <= 0f) {
+                    localX += pos.xAdvance * spacingScale
+                    localY += pos.yAdvance
+                    continue
+                }
                 val drawX = localX + pos.xOffset
                 val drawY = localY - pos.yOffset
                 val path = flipped[gid]
                 if (path != null) {
                     canvas.save()
-                    canvas.translate(drawX, drawY)
+                    if (effect == null) {
+                        canvas.translate(drawX, drawY)
+                    } else {
+                        // The paint is shared across glyphs, so re-set its
+                        // alpha per glyph while effects are active.
+                        paint.alpha = alpha * shadow.color.alpha * effect.alpha
+                        canvas.translate(drawX + effect.translateX, drawY + effect.translateY)
+                        if (effect.scale != 1f) canvas.scale(effect.scale, effect.scale)
+                    }
                     canvas.drawPath(path, paint)
                     canvas.restore()
                 }
@@ -1042,6 +1273,7 @@ private fun DrawScope.drawOneGlyphForBrush(
     style: DrawStyle,
     blendMode: BlendMode,
     combinedPath: Path,
+    effect: GlyphEffect? = null,
 ) {
     val svgRender = if (caches.useSvg) caches.svgCache?.get(glyphId) else null
     val paintTree = if (svgRender == null && caches.useV1Paint) {
@@ -1051,23 +1283,29 @@ private fun DrawScope.drawOneGlyphForBrush(
         caches.colorLayers?.get(glyphId)
     } else null
 
+    // In-place color draws take the exact effect alpha; monochrome
+    // silhouettes joining [combinedPath] carry their alpha via the
+    // caller's quantized bucket instead, so only the transform is
+    // baked into the appended path.
+    val effectAlpha = if (effect == null) alpha else alpha * effect.alpha
+
     if (svgRender != null) {
-        translate(left = drawX, top = drawY) {
+        withGlyphEffectTransform(effect, drawX, drawY) {
             drawSvgGlyphBitmap(
                 render = svgRender,
                 pointSize = sizePx,
                 upem = runFont.face.upem,
-                alpha = alpha,
+                alpha = effectAlpha,
                 blendMode = blendMode,
             )
         }
     } else if (paintTree != null && paintTree.isNotEmpty()) {
-        translate(left = drawX, top = drawY) {
+        withGlyphEffectTransform(effect, drawX, drawY) {
             drawV1PaintTree(
                 rawPaths = caches.rawPaths,
                 ops = paintTree,
                 color = color,
-                alpha = alpha,
+                alpha = effectAlpha,
                 blendMode = blendMode,
             )
         }
@@ -1076,23 +1314,23 @@ private fun DrawScope.drawOneGlyphForBrush(
             val layerPath = caches.flippedPaths[layer.glyphId] ?: continue
             val layerArgb = layer.argb
             if (layerArgb != null) {
-                translate(left = drawX, top = drawY) {
+                withGlyphEffectTransform(effect, drawX, drawY) {
                     drawPath(
                         path = layerPath,
                         color = Color(layerArgb.toLong() and 0xFFFFFFFFL),
-                        alpha = alpha,
+                        alpha = effectAlpha,
                         style = style,
                         blendMode = blendMode,
                     )
                 }
             } else {
-                combinedPath.addPath(layerPath, Offset(drawX, drawY))
+                appendGlyphPathWithEffect(combinedPath, layerPath, drawX, drawY, effect)
             }
         }
     } else {
         val path = caches.flippedPaths[glyphId]
         if (path != null) {
-            combinedPath.addPath(path, Offset(drawX, drawY))
+            appendGlyphPathWithEffect(combinedPath, path, drawX, drawY, effect)
         }
     }
 }

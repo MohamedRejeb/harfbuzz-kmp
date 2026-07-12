@@ -8,7 +8,6 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.DrawStyle
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.translate
 import com.mohamedrejeb.harfbuzz.core.HbDirection
 
 /**
@@ -29,6 +28,7 @@ internal fun DrawScope.drawShapedTextStyledInternal(
     blendMode: BlendMode,
     forceForegroundColor: Boolean,
     shadow: Shadow?,
+    glyphEffects: GlyphEffectProvider? = null,
 ) {
     if (measured.isEmpty) return
 
@@ -46,6 +46,7 @@ internal fun DrawScope.drawShapedTextStyledInternal(
             style = style,
             blendMode = blendMode,
             spacingScale = 1f,
+            glyphEffects = glyphEffects,
         )
     }
 
@@ -59,14 +60,21 @@ internal fun DrawScope.drawShapedTextStyledInternal(
 
     // One combined path per distinct ResolvedPaint. Iteration order is
     // insertion order (LinkedHashMap default), so bucket painting also
-    // happens in first-seen order.
+    // happens in first-seen order. With per-glyph effects the key grows
+    // a quantized-alpha dimension (a union cannot vary alpha per glyph),
+    // held in a separate map so the static path allocates nothing new.
     val pathBuckets = LinkedHashMap<ResolvedPaint, androidx.compose.ui.graphics.Path>()
+    val effectPathBuckets = if (glyphEffects != null) {
+        LinkedHashMap<StyledEffectBucketKey, androidx.compose.ui.graphics.Path>()
+    } else null
 
     val baselineY = topLeft.y + measured.baseline
     var penX = topLeft.x
     var penY = baselineY
 
-    for (run in measured.paragraph.runs) {
+    val allRuns = measured.paragraph.runs
+    for (runIndex in allRuns.indices) {
+        val run = allRuns[runIndex]
         val runFont = run.font ?: measured.font
         val caches = measured.runCachesFor(runFont, forceForegroundColor, style)
 
@@ -98,6 +106,14 @@ internal fun DrawScope.drawShapedTextStyledInternal(
             val gid = run.glyphs[i].glyphId
             val pos = run.positions[i]
             val cl = run.glyphs[i].cluster
+
+            val effect = glyphEffects?.effectFor(runIndex, i, cl)
+            if (effect != null && effect.alpha <= 0f) {
+                localX += pos.xAdvance
+                localY += pos.yAdvance
+                continue
+            }
+
             val drawX = localX + pos.xOffset
             val drawY = localY - pos.yOffset
 
@@ -130,14 +146,14 @@ internal fun DrawScope.drawShapedTextStyledInternal(
                     resolved.color != Color.Unspecified -> resolved.color
                     else -> color
                 }
-                translate(left = drawX, top = drawY) {
+                withGlyphEffectTransform(effect, drawX, drawY) {
                     drawOneGlyphAtOrigin(
                         runFont = runFont,
                         sizePx = measured.sizePx,
                         caches = caches,
                         glyphId = gid,
                         color = foreground,
-                        alpha = alpha,
+                        alpha = if (effect == null) alpha else alpha * effect.alpha,
                         style = style,
                         blendMode = blendMode,
                     )
@@ -146,10 +162,21 @@ internal fun DrawScope.drawShapedTextStyledInternal(
                 // Monochrome: append to the resolved-paint bucket.
                 val flipped = caches.flippedPaths[gid]
                 if (flipped != null) {
-                    val path = pathBuckets.getOrPut(resolved) {
-                        androidx.compose.ui.graphics.Path()
+                    if (effectPathBuckets != null) {
+                        val bucketAlpha = quantizeGlyphEffectAlpha(effect?.alpha ?: 1f)
+                        if (bucketAlpha > 0f) {
+                            val key = StyledEffectBucketKey(resolved, bucketAlpha)
+                            val path = effectPathBuckets.getOrPut(key) {
+                                androidx.compose.ui.graphics.Path()
+                            }
+                            appendGlyphPathWithEffect(path, flipped, drawX, drawY, effect)
+                        }
+                    } else {
+                        val path = pathBuckets.getOrPut(resolved) {
+                            androidx.compose.ui.graphics.Path()
+                        }
+                        path.addPath(flipped, Offset(drawX, drawY))
                     }
-                    path.addPath(flipped, Offset(drawX, drawY))
                 }
             }
 
@@ -168,6 +195,17 @@ internal fun DrawScope.drawShapedTextStyledInternal(
     // with a below-baseline KASRA) then overpaints the colored mark
     // and hides it. Painting the default bucket first reverses that.
     val defaultPaint = ResolvedPaint(color, brush)
+    if (effectPathBuckets != null) {
+        for ((key, path) in effectPathBuckets) {
+            if (key.paint != defaultPaint) continue
+            drawResolvedBucket(key.paint, path, alpha * key.alpha, style, blendMode)
+        }
+        for ((key, path) in effectPathBuckets) {
+            if (key.paint == defaultPaint) continue
+            drawResolvedBucket(key.paint, path, alpha * key.alpha, style, blendMode)
+        }
+        return
+    }
     pathBuckets[defaultPaint]?.let { defaultPath ->
         drawResolvedBucket(defaultPaint, defaultPath, alpha, style, blendMode)
     }
@@ -176,6 +214,16 @@ internal fun DrawScope.drawShapedTextStyledInternal(
         drawResolvedBucket(resolved, path, alpha, style, blendMode)
     }
 }
+
+/**
+ * Bucket key for the styled draw under per-glyph effects: the resolved
+ * per-glyph paint plus the quantized effect alpha, so each (paint, alpha)
+ * pair becomes one combined-path draw.
+ */
+private data class StyledEffectBucketKey(
+    val paint: ResolvedPaint,
+    val alpha: Float,
+)
 
 private fun DrawScope.drawResolvedBucket(
     resolved: ResolvedPaint,
