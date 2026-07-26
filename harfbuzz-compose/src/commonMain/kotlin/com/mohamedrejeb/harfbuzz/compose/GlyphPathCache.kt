@@ -22,9 +22,10 @@ import com.mohamedrejeb.harfbuzz.core.HbFont
  * is left as a follow-up - see the perf plan.
  *
  * Implementation mirrors [MeasuredTextCache]: [LinkedHashMap] under
- * FIFO eviction, no locks. Glyph caches populate on the draw thread
- * inside `LazyGlyphPathMap.get`; Compose draw is single-threaded per
- * frame, so worst-case overlap duplicates work for one entry.
+ * FIFO eviction, methods synchronized. The UI thread draws while
+ * background renders (layer baking, export) populate the same cache
+ * concurrently; unsynchronized eviction throws
+ * ConcurrentModificationException.
  */
 internal object GlyphPathCache {
     private const val MAX_ENTRIES = 256
@@ -38,8 +39,10 @@ internal object GlyphPathCache {
 
     private val entries = LinkedHashMap<Key, Path>()
 
+    @JvmSynchronized
     fun get(key: Key): Path? = entries[key]
 
+    @JvmSynchronized
     fun put(key: Key, path: Path) {
         if (!entries.containsKey(key) && entries.size >= MAX_ENTRIES) {
             val it = entries.entries.iterator()
@@ -51,6 +54,7 @@ internal object GlyphPathCache {
         entries[key] = path
     }
 
+    @JvmSynchronized
     fun clear() {
         entries.clear()
     }

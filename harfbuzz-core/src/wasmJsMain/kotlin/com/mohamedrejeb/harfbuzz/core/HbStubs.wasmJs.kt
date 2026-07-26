@@ -63,17 +63,17 @@ public actual class HbFace internal constructor(
     public actual fun openTypeTags(): List<HbTag> = emptyList()
 
     public actual fun hasColorLayers(): Boolean {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         return cachedHasColorLayers
     }
 
     public actual fun hasColorPaint(): Boolean {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         return cachedHasColorPaint
     }
 
     public actual fun hasColorPng(): Boolean {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         // The worker-side paint walker has no image-op writer yet, so
         // bitmap glyphs can't be drawn on wasm. Report false so nothing
         // ranks a CBDT/sbix font as a drawable color font here.
@@ -81,19 +81,19 @@ public actual class HbFace internal constructor(
     }
 
     public actual fun hasColorSvg(): Boolean {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         return cachedHasColorSvg
     }
 
     public actual fun variationAxes(): List<HbVariationAxis> {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         return cachedAxes
     }
 
     public actual suspend fun toFont(): HbFont = toFont(emptyList())
 
     public actual suspend fun toFont(variations: List<HbVariation>): HbFont {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         // Mint the worker-side hb_font_t at the design scale; size-dependent
         // RPCs carry their own sizePx so the worker can re-scale per call.
         // Cached design-space ascender/descender/lineGap come back in the
@@ -216,7 +216,7 @@ public actual class HbFont internal constructor(
      * with no extra round-trip.
      */
     public actual suspend fun hExtents(sizePx: Float): FontExtents? {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         val k = sizePx / DESIGN_SCALE_POINT_SIZE
         return FontExtents(
             ascender = designExtents.ascender * k,
@@ -226,7 +226,7 @@ public actual class HbFont internal constructor(
     }
 
     public actual suspend fun glyphIdForCodepoint(codepoint: Int): Int {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         val payload = buildGlyphIdForCodepointPayload(fontId.toInt(), codepoint)
         val reply = HbWorker.send("getGlyphIdForCodepoint", payload)
             ?: return 0
@@ -234,7 +234,7 @@ public actual class HbFont internal constructor(
     }
 
     public actual suspend fun glyphAdvance(glyphId: Int, sizePx: Float): Float {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         val payload = buildGlyphIdPayload(fontId.toInt(), glyphId, sizePx)
         val reply = HbWorker.send("getGlyphAdvance", payload)
             ?: return 0f
@@ -242,7 +242,7 @@ public actual class HbFont internal constructor(
     }
 
     public actual suspend fun glyphExtents(glyphId: Int, sizePx: Float): GlyphExtents? {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         val payload = buildGlyphIdPayload(fontId.toInt(), glyphId, sizePx)
         val reply = HbWorker.send("getGlyphExtents", payload) ?: return null
         if (jsGetIntField(reply, "ok") == 0) return null
@@ -255,7 +255,7 @@ public actual class HbFont internal constructor(
     }
 
     public actual suspend fun shape(buffer: HbBuffer, sizePx: Float): ShapedRun {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         check(!buffer.isClosed) { "hb object disposed" }
         val payload = buildShapeRunPayload(
             fontId = fontId.toInt(),
@@ -278,7 +278,7 @@ public actual class HbFont internal constructor(
         features: List<HbFeature>,
         language: HbLanguage,
     ): ShapedParagraph {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         if (text.isEmpty()) return ShapedParagraph.EMPTY.copy(baseDirection = baseDirection)
 
         // Resolve BiDi on main - pure Kotlin, no JS interop. Worker receives
@@ -313,7 +313,7 @@ public actual class HbFont internal constructor(
     }
 
     public actual suspend fun drawGlyph(glyphId: Int, sizePx: Float, sink: HbPathSink) {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         val payload = buildGlyphIdPayload(fontId.toInt(), glyphId, sizePx)
         val reply = HbWorker.send("getGlyphPath", payload) ?: return
         val svgPath = jsGetStringField(reply, "svg")
@@ -322,7 +322,7 @@ public actual class HbFont internal constructor(
     }
 
     public actual suspend fun glyphColorLayers(glyphId: Int): List<ColorLayer> {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         // Color-layer structure is sizeless (face-level OT-COLR data); the
         // worker still routes through the font handle, so a unit sizePx
         // keeps the wire format uniform without affecting the output.
@@ -339,7 +339,7 @@ public actual class HbFont internal constructor(
         paletteIndex: Int,
         sink: HbPaintSink,
     ) {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         val payload = buildPaintGlyphPayload(
             fontId = fontId.toInt(),
             gid = glyphId,
@@ -354,7 +354,7 @@ public actual class HbFont internal constructor(
     }
 
     public actual suspend fun glyphSvg(glyphId: Int): ByteArray? {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         // SVG-in-OT bytes are sizeless face data; pass a unit sizePx for
         // wire-format uniformity.
         val payload = buildGlyphIdPayload(fontId.toInt(), glyphId, DESIGN_SCALE_POINT_SIZE)
@@ -369,7 +369,7 @@ public actual class HbFont internal constructor(
         sizePx: Float,
         flags: GlyphSnapshotFlags,
     ): GlyphSnapshot {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         if (gids.isEmpty()) {
             return GlyphSnapshot(
                 flippedPathSvg = emptyMap(),
@@ -415,25 +415,25 @@ public actual class HbBuffer actual constructor() : AutoCloseable {
 
     public actual var text: String = ""
         set(value) {
-            check(!closed) { "hb object disposed" }
+            throwIfDisposed(closed)
             field = value
         }
 
     public actual var direction: HbDirection = HbDirection.AUTO
         set(value) {
-            check(!closed) { "hb object disposed" }
+            throwIfDisposed(closed)
             field = value
         }
 
     public actual var script: HbScript = HbScript.AUTO
         set(value) {
-            check(!closed) { "hb object disposed" }
+            throwIfDisposed(closed)
             field = value
         }
 
     public actual var language: HbLanguage = HbLanguage.AUTO
         set(value) {
-            check(!closed) { "hb object disposed" }
+            throwIfDisposed(closed)
             field = value
         }
 
@@ -442,7 +442,7 @@ public actual class HbBuffer actual constructor() : AutoCloseable {
     public actual val isClosed: Boolean get() = closed
 
     public actual fun reset() {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         text = ""
         direction = HbDirection.AUTO
         script = HbScript.AUTO

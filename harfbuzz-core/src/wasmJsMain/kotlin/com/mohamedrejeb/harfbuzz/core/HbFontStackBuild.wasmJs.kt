@@ -26,7 +26,7 @@ internal actual suspend fun HbFontStack.tryBuildMeasuredFastPath(
     // continues to work. A font closed mid-flight would otherwise throw
     // `unknown fontId N` from the worker, which Compose has no way to
     // identify as the recompose-driven race it actually is.
-    fonts.forEach { check(!it.isClosed) { "hb object disposed" } }
+    fonts.forEach { throwIfDisposed(it.isClosed) }
 
     HbWorker.ensureWorkerReady()
 

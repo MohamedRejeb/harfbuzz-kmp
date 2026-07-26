@@ -57,6 +57,7 @@ import com.mohamedrejeb.harfbuzz.native.hb_ot_var_axis_info_t
 import com.mohamedrejeb.harfbuzz.native.hb_ot_var_get_axis_count
 import com.mohamedrejeb.harfbuzz.native.hb_ot_var_get_axis_infos
 import com.mohamedrejeb.harfbuzz.native.hb_variation_t
+import kotlin.concurrent.Volatile
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.withContext
@@ -105,6 +106,7 @@ public actual class HbBlob internal constructor(
     internal val handle: CPointer<*>,
     public actual val sizeBytes: Int,
 ) : AutoCloseable {
+    @Volatile
     private var closed: Boolean = false
     public actual val isClosed: Boolean get() = closed
     actual override fun close() {
@@ -142,6 +144,7 @@ public actual class HbFace internal constructor(
     public actual val upem: Int,
     public actual val faceCount: Int,
 ) : AutoCloseable {
+    @Volatile
     private var closed: Boolean = false
     public actual val isClosed: Boolean get() = closed
 
@@ -166,17 +169,17 @@ public actual class HbFace internal constructor(
     }
 
     public actual fun hasColorLayers(): Boolean {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         return cachedHasColorLayers
     }
 
     public actual fun hasColorPaint(): Boolean {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         return cachedHasColorPaint
     }
 
     public actual fun hasColorPng(): Boolean {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         // IosPaintFuncs has no image callback yet, so bitmap glyphs can't
         // be drawn on iOS. Report false so nothing ranks a CBDT/sbix font
         // as a drawable color font here.
@@ -184,12 +187,12 @@ public actual class HbFace internal constructor(
     }
 
     public actual fun hasColorSvg(): Boolean {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         return cachedHasColorSvg
     }
 
     public actual suspend fun toFont(): HbFont = withContext(harfbuzzDispatcher) {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         val fontPtr = hb_font_create(handle.reinterpret())
             ?: throw HbException("hb_font_create returned null")
         HbFont(this@HbFace, fontPtr)
@@ -197,7 +200,7 @@ public actual class HbFace internal constructor(
 
     public actual suspend fun toFont(variations: List<HbVariation>): HbFont =
         withContext(harfbuzzDispatcher) {
-            check(!closed) { "hb object disposed" }
+            throwIfDisposed(closed)
             val fontPtr = hb_font_create(handle.reinterpret())
                 ?: throw HbException("hb_font_create returned null")
             if (variations.isNotEmpty()) {
@@ -237,7 +240,7 @@ public actual class HbFace internal constructor(
     }
 
     public actual fun variationAxes(): List<HbVariationAxis> {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         val total = hb_ot_var_get_axis_count(handle.reinterpret()).toInt()
         if (total == 0) return emptyList()
         return memScoped {
@@ -335,6 +338,7 @@ public actual class HbFont internal constructor(
     public actual val face: HbFace,
     internal val handle: CPointer<*>,
 ) : AutoCloseable {
+    @Volatile
     private var closed: Boolean = false
 
     public actual val isClosed: Boolean get() = closed
@@ -351,7 +355,7 @@ public actual class HbFont internal constructor(
 
     public actual suspend fun glyphIdForCodepoint(codepoint: Int): Int =
         withContext(harfbuzzDispatcher) {
-            check(!closed) { "hb object disposed" }
+            throwIfDisposed(closed)
             memScoped {
                 val out = alloc<UIntVar>()
                 hb_font_get_glyph(handle.reinterpret(), codepoint.convert(), 0u, out.ptr)
@@ -361,7 +365,7 @@ public actual class HbFont internal constructor(
 
     public actual suspend fun glyphAdvance(glyphId: Int, sizePx: Float): Float =
         withContext(harfbuzzDispatcher) {
-            check(!closed) { "hb object disposed" }
+            throwIfDisposed(closed)
             setScale(sizePx)
             val adv = hb_font_get_glyph_h_advance(handle.reinterpret(), glyphId.convert())
             toPixels(adv)
@@ -369,7 +373,7 @@ public actual class HbFont internal constructor(
 
     public actual suspend fun glyphExtents(glyphId: Int, sizePx: Float): GlyphExtents? =
         withContext(harfbuzzDispatcher) {
-            check(!closed) { "hb object disposed" }
+            throwIfDisposed(closed)
             setScale(sizePx)
             memScoped {
                 val ext = alloc<hb_glyph_extents_t>()
@@ -385,7 +389,7 @@ public actual class HbFont internal constructor(
 
     public actual suspend fun hExtents(sizePx: Float): FontExtents? =
         withContext(harfbuzzDispatcher) {
-            check(!closed) { "hb object disposed" }
+            throwIfDisposed(closed)
             setScale(sizePx)
             memScoped {
                 val ext = alloc<hb_font_extents_t>()
@@ -404,7 +408,7 @@ public actual class HbFont internal constructor(
 
     public actual suspend fun glyphColorLayers(glyphId: Int): List<ColorLayer> =
         withContext(harfbuzzDispatcher) {
-            check(!closed) { "hb object disposed" }
+            throwIfDisposed(closed)
             val face = hb_font_get_face(handle.reinterpret()) ?: return@withContext emptyList()
             memScoped {
                 // Probe count first.
@@ -449,7 +453,7 @@ public actual class HbFont internal constructor(
 
     public actual suspend fun shape(buffer: HbBuffer, sizePx: Float): ShapedRun =
         withContext(harfbuzzDispatcher) {
-            check(!closed) { "hb object disposed" }
+            throwIfDisposed(closed)
             setScale(sizePx)
             IosShaping.shapeBufferIntoRun(this@HbFont, buffer, buffer.features)
         }
@@ -461,14 +465,14 @@ public actual class HbFont internal constructor(
         features: List<HbFeature>,
         language: HbLanguage,
     ): ShapedParagraph = withContext(harfbuzzDispatcher) {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         setScale(sizePx)
         IosShaping.shapeParagraph(this@HbFont, text, sizePx, baseDirection, features, language)
     }
 
     public actual suspend fun drawGlyph(glyphId: Int, sizePx: Float, sink: HbPathSink) {
         withContext(harfbuzzDispatcher) {
-            check(!closed) { "hb object disposed" }
+            throwIfDisposed(closed)
             setScale(sizePx)
             throw HbException("drawGlyph on iOS not yet implemented")
         }
@@ -482,7 +486,7 @@ public actual class HbFont internal constructor(
         sink: HbPaintSink,
     ) {
         withContext(harfbuzzDispatcher) {
-            check(!closed) { "hb object disposed" }
+            throwIfDisposed(closed)
             setScale(sizePx)
             // Pass the sink as user_data via a StableRef so the static C
             // callbacks in IosPaintFuncs can recover it. Dispose immediately
@@ -505,7 +509,7 @@ public actual class HbFont internal constructor(
 
     public actual suspend fun glyphSvg(glyphId: Int): ByteArray? =
         withContext(harfbuzzDispatcher) {
-            check(!closed) { "hb object disposed" }
+            throwIfDisposed(closed)
             readGlyphSvgBytes(glyphId)
         }
 
@@ -514,7 +518,7 @@ public actual class HbFont internal constructor(
         sizePx: Float,
         flags: GlyphSnapshotFlags,
     ): GlyphSnapshot = withContext(harfbuzzDispatcher) {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         setScale(sizePx)
         // iOS notes:
         //  * `drawGlyph` is not yet implemented; until then `flippedPath`/
@@ -631,11 +635,12 @@ public actual class HbBuffer actual constructor() : AutoCloseable {
     internal val handle: CPointer<*> = hb_buffer_create()
         ?: throw HbException("hb_buffer_create returned null")
 
+    @Volatile
     private var closed: Boolean = false
 
     public actual var text: String = ""
         set(value) {
-            check(!closed) { "hb object disposed" }
+            throwIfDisposed(closed)
             field = value
             hb_buffer_clear_contents(handle.reinterpret())
             value.toCharArray().usePinned { pinned ->
@@ -664,7 +669,7 @@ public actual class HbBuffer actual constructor() : AutoCloseable {
     public actual var direction: HbDirection
         get() = _direction
         set(value) {
-            check(!closed) { "hb object disposed" }
+            throwIfDisposed(closed)
             _direction = value
             hb_buffer_set_direction(handle.reinterpret(), value.toNativeIos().convert())
         }
@@ -673,7 +678,7 @@ public actual class HbBuffer actual constructor() : AutoCloseable {
     public actual var script: HbScript
         get() = _script
         set(value) {
-            check(!closed) { "hb object disposed" }
+            throwIfDisposed(closed)
             _script = value
             hb_buffer_set_script(
                 handle.reinterpret(),
@@ -685,7 +690,7 @@ public actual class HbBuffer actual constructor() : AutoCloseable {
     public actual var language: HbLanguage
         get() = _language
         set(value) {
-            check(!closed) { "hb object disposed" }
+            throwIfDisposed(closed)
             _language = value
             if (value != HbLanguage.AUTO) {
                 hb_buffer_set_language(handle.reinterpret(), hb_language_from_string(value.bcp47, -1))
@@ -697,7 +702,7 @@ public actual class HbBuffer actual constructor() : AutoCloseable {
     public actual val isClosed: Boolean get() = closed
 
     public actual fun reset() {
-        check(!closed) { "hb object disposed" }
+        throwIfDisposed(closed)
         hb_buffer_reset(handle.reinterpret())
         text = ""
         _direction = HbDirection.AUTO
