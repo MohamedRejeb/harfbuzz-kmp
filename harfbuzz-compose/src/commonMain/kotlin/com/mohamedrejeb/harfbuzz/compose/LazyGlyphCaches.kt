@@ -26,10 +26,9 @@ import kotlin.coroutines.cancellation.CancellationException
  * of every glyph - defeating the optimisation. Tighten if a future
  * caller materialises.
  *
- * Threading: lookups happen on the UI thread per frame and are
- * serialised by Compose's draw scheduler. [GlyphPathCache] is not
- * externally synchronised; concurrent draws on the same
- * `MeasuredText` would be a Compose-runtime bug.
+ * Threading: the UI thread and background renders (layer baking,
+ * export) can draw the same `MeasuredText` concurrently; per-glyph
+ * memoisation is delegated to the synchronized [GlyphPathCache].
  */
 internal class LazyGlyphPathMap(
     private val rawSvgs: Map<Int, String>,
@@ -87,6 +86,9 @@ internal class LazyPaintTreeMap(
     override fun containsKey(key: Int): Boolean = rawBytes.containsKey(key)
     override val keys: Set<Int> get() = rawBytes.keys
 
+    // Synchronized: cached MeasuredText instances draw from the UI thread
+    // and background renders concurrently, sharing this memo map.
+    @JvmSynchronized
     override fun get(key: Int): List<RecordedPaintOp>? {
         parsed[key]?.let { return it }
         val bytes = rawBytes[key] ?: return null

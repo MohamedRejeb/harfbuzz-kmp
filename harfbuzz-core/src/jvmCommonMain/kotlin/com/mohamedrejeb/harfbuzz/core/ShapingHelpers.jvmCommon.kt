@@ -13,7 +13,7 @@ internal object ShapingHelpers {
         features: List<HbFeature>,
         sizePx: Float,
     ): ShapedRun {
-        check(!buffer.isClosed) { "hb object disposed" }
+        throwIfDisposed(buffer.isClosed)
         val packed = packFeatures(features)
         HarfbuzzNative.shape(font.ptr, buffer.ptr, packed, features.size)
 

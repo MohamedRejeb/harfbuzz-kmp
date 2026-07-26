@@ -26,15 +26,15 @@ import kotlin.math.round
  *    font shapes once and serves the rest of the screen from the cache.
  *
  * Implementation mirrors [SvgBitmapCache]: a [LinkedHashMap] under FIFO
- * eviction, no locks. Eviction is FIFO rather than access-order because
- * `LinkedHashMap` access-order isn't portable to all KMP targets, and at
- * a 32-entry working set FIFO is indistinguishable from LRU for the
- * workloads this cache targets.
+ * eviction, methods synchronized. Eviction is FIFO rather than
+ * access-order because `LinkedHashMap` access-order isn't portable to
+ * all KMP targets, and at a 32-entry working set FIFO is
+ * indistinguishable from LRU for the workloads this cache targets.
  *
- * Threading: [buildMeasuredText] runs inside `runShapingWork`, which on
- * JVM/Android/iOS pins to a single-threaded `harfbuzzDispatcher`. Worst-
- * case overlap (two coroutines suspending mid-build on the same key)
- * duplicates work for that key - acceptable, last writer wins.
+ * Threading: callers reach [buildMeasuredText] from arbitrary
+ * dispatchers, so get/put are synchronized. Worst-case overlap (two
+ * builds racing the same key) duplicates work for that key -
+ * acceptable, last writer wins.
  *
  * Memory: a [MeasuredText] for a typical UI label is on the order of a
  * few KB (paragraph runs + per-glyph path/paint maps the size of the
@@ -48,8 +48,10 @@ internal object MeasuredTextCache {
 
     private val entries = LinkedHashMap<MeasureKey, MeasuredText>()
 
+    @JvmSynchronized
     fun get(key: MeasureKey): MeasuredText? = entries[key]
 
+    @JvmSynchronized
     fun put(key: MeasureKey, value: MeasuredText) {
         if (!entries.containsKey(key) && entries.size >= MAX_ENTRIES) {
             val it = entries.entries.iterator()
@@ -61,6 +63,7 @@ internal object MeasuredTextCache {
         entries[key] = value
     }
 
+    @JvmSynchronized
     fun clear() {
         entries.clear()
     }
