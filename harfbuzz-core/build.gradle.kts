@@ -64,6 +64,10 @@ val configureNativeJvm by tasks.registering(Exec::class) {
     )
     if (host.osArch.startsWith("macos-")) {
         args += "-DCMAKE_OSX_ARCHITECTURES=" + if (host.osArch.endsWith("aarch64")) "arm64" else "x86_64"
+        // Without an explicit deployment target clang stamps the build host's OS
+        // version into the MachO header (minos), which breaks packaging on any
+        // older macOS (Conveyor rejects minos > LSMinimumSystemVersion = 12.0).
+        args += "-DCMAKE_OSX_DEPLOYMENT_TARGET=12.0"
     }
     commandLine(args)
 }
