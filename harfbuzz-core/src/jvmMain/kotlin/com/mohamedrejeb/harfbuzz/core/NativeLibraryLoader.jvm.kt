@@ -10,7 +10,8 @@ import java.security.MessageDigest
 /**
  * Desktop JVM native library loader.
  *
- * Resolves the running platform's `(os, arch)` to a resource path under
+ * Tries [System.loadLibrary] first, otherwise resolves the running platform's
+ * `(os, arch)` to a resource path under
  * `native/<os-arch>/lib<name>.<ext>` inside the consumer's classpath, then
  * extracts the file to `${java.io.tmpdir}/kotlin-harfbuzz/<sha256>/<filename>`
  * and calls [System.load] on the absolute path. Idempotent across processes
@@ -18,6 +19,14 @@ import java.security.MessageDigest
  * artifact share the extracted file.
  */
 internal actual fun loadNativeLib(name: String) {
+    // Tmpdir-extracted dylibs fail macOS signature checks in signed builds,
+    // so prefer java.library.path.
+    try {
+        System.loadLibrary(name)
+        return
+    } catch (_: UnsatisfiedLinkError) {
+    }
+
     val (osArch, ext) = detectPlatform()
     val libFilename = platformLibFilename(name, ext)
     val resourcePath = "native/$osArch/$libFilename"
