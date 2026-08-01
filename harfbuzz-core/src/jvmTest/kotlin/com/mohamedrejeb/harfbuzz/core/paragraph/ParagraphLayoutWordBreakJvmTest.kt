@@ -206,6 +206,63 @@ class ParagraphLayoutWordBreakJvmTest {
     }
 
     @Test
+    fun breakWord_nan_max_width_returns_empty_like_non_positive() = runBlocking {
+        withRoboto { stack ->
+            // NaN fails every budget comparison, which used to march a
+            // whitespace-only candidate into the grapheme bisect with
+            // empty text and crash on `boundaries[1]` (length=1;
+            // index=1). NaN must short-circuit like maxWidth <= 0.
+            val laid = stack.layoutParagraph(
+                text = "a b",
+                sizePx = SIZE_PX,
+                maxWidth = Float.NaN,
+                wordBreak = WordBreak.BreakWord,
+            )
+            assertEquals(0, laid.lineCount)
+        }
+    }
+
+    @Test
+    fun breakWord_nan_letter_spacing_terminates_without_crash() = runBlocking {
+        withRoboto { stack ->
+            // NaN letter spacing poisons the effective advance (0 +
+            // NaN * 0 = NaN) even with a valid budget, so a
+            // whitespace-only candidate never "fits". It must be
+            // consumed as-is instead of reaching the bisect.
+            val text = "a b"
+            val laid = stack.layoutParagraph(
+                text = text,
+                sizePx = SIZE_PX,
+                maxWidth = 200f,
+                wordBreak = WordBreak.BreakWord,
+                letterSpacing = Float.NaN,
+            )
+            assertTrue(laid.lineCount >= 1)
+            assertEquals(0, laid.lines.first().charRange.first)
+            assertEquals(text.length - 1, laid.lines.last().charRange.last)
+        }
+    }
+
+    @Test
+    fun anyChar_nan_letter_spacing_with_trailing_spaces_terminates() = runBlocking {
+        withRoboto { stack ->
+            // AnyChar's slice for a trailing-whitespace tail trims to
+            // an empty visible text - same empty-bisect crash path as
+            // BreakWord when the advance check is poisoned.
+            val text = "ab "
+            val laid = stack.layoutParagraph(
+                text = text,
+                sizePx = SIZE_PX,
+                maxWidth = 200f,
+                wordBreak = WordBreak.AnyChar,
+                letterSpacing = Float.NaN,
+            )
+            assertTrue(laid.lineCount >= 1)
+            assertEquals(text.length - 1, laid.lines.last().charRange.last)
+        }
+    }
+
+    @Test
     fun breakWord_does_not_split_supplementary_codepoint_pair() = runBlocking {
         withRoboto { stack ->
             // The grinning-face emoji (U+1F600) is two UTF-16 code

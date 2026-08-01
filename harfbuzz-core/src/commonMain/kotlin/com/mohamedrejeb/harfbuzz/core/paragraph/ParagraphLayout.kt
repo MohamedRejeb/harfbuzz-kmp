@@ -55,7 +55,11 @@ public suspend fun HbFontStack.layoutParagraph(
     wordBreak: WordBreak = WordBreak.Phrase,
     letterSpacing: Float = 0f,
 ): LaidOutParagraph {
-    if (text.isEmpty() || maxWidth <= 0f) {
+    // NaN fails every `<=` budget check, so it must be caught here like a
+    // non-positive width: letting it through sends whitespace-only (empty
+    // after trimming) candidates into the grapheme bisect, which requires
+    // non-empty text.
+    if (text.isEmpty() || maxWidth.isNaN() || maxWidth <= 0f) {
         return LaidOutParagraph.empty(baseDirection = baseDirection, alignment = alignment)
     }
 
@@ -247,7 +251,11 @@ private suspend fun HbFontStack.pickLine(
             // bisect within this candidate at a grapheme boundary so
             // the prefix fits the budget; the next line resumes from
             // the cut point.
-            if (wordBreak == WordBreak.BreakWord) {
+            // An empty visible candidate (whitespace-only, possible when a
+            // NaN advance poisons the fit check) must not reach the bisect:
+            // it falls through to the take-overflow branch below, which
+            // consumes the candidate and keeps the outer loop progressing.
+            if (wordBreak == WordBreak.BreakWord && visibleText.isNotEmpty()) {
                 return bisectByGrapheme(
                     text = text,
                     sizePx = sizePx,
@@ -319,7 +327,10 @@ private suspend fun HbFontStack.pickLineAnyChar(
     val sliceShape = shapeParagraph(visibleText, sizePx, baseDirection, features, language)
     val containsHardBreak = sliceText.indexOfLast { isHardBreakChar(it) } >= 0
 
-    if (effectiveLineAdvance(sliceShape, letterSpacing) <= maxWidth) {
+    // Empty visible slice (whitespace-only) is consumed as-is: its advance
+    // is 0 so it normally fits, but a NaN advance or budget fails the check
+    // and the bisect below requires non-empty text.
+    if (visibleText.isEmpty() || effectiveLineAdvance(sliceShape, letterSpacing) <= maxWidth) {
         return LinePick(
             end = sliceEnd,
             shape = sliceShape,
@@ -393,9 +404,8 @@ private suspend fun HbFontStack.bisectByGrapheme(
     }
 
     // Forward progress: take the first grapheme even if it overflows.
-    // Bisect is only invoked on a non-empty overflow (totalAdvance >
-    // maxWidth implies at least one glyph), so boundaries always
-    // contains a positive entry past `0`.
+    // Both callers guarantee a non-empty [overflowText], so boundaries
+    // always contains a positive entry past `0`.
     if (chosenLocal < 0) chosenLocal = boundaries[1]
 
     val prefixEnd = cursor + chosenLocal
