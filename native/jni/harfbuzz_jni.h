@@ -125,6 +125,7 @@ JNIEXPORT jlong  JNICALL KH_FN(bufferCreate)(JNIEnv* env, jclass);
 JNIEXPORT void   JNICALL KH_FN(bufferDestroy)(JNIEnv* env, jclass, jlong bufferPtr);
 JNIEXPORT void   JNICALL KH_FN(bufferReset)(JNIEnv* env, jclass, jlong bufferPtr);
 JNIEXPORT void   JNICALL KH_FN(bufferSetText)(JNIEnv* env, jclass, jlong bufferPtr, jstring text);
+JNIEXPORT void   JNICALL KH_FN(bufferSetTextWithContext)(JNIEnv* env, jclass, jlong bufferPtr, jstring text, jint itemOffset, jint itemLength);
 JNIEXPORT void   JNICALL KH_FN(bufferSetDirection)(JNIEnv* env, jclass, jlong bufferPtr, jint direction);
 JNIEXPORT void   JNICALL KH_FN(bufferSetScript)(JNIEnv* env, jclass, jlong bufferPtr, jint scriptTag);
 JNIEXPORT void   JNICALL KH_FN(bufferSetLanguage)(JNIEnv* env, jclass, jlong bufferPtr, jstring bcp47);

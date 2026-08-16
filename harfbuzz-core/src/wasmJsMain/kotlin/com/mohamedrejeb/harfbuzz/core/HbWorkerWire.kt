@@ -192,7 +192,7 @@ internal fun buildSnapshotGlyphsPayload(
 
 @JsFun(
     """
-    (fontId, sizePx, text, direction, scriptTag, language, featureTags, featureValues, featureStarts, featureEnds, count) => {
+    (fontId, sizePx, text, direction, scriptTag, language, featureTags, featureValues, featureStarts, featureEnds, count, itemOffset, itemLength) => {
         const features = [];
         for (let i = 0; i < count; i++) {
             features.push({
@@ -209,7 +209,9 @@ internal fun buildSnapshotGlyphsPayload(
             direction: String(direction),
             scriptTag: scriptTag | 0,
             language: String(language),
-            features: features
+            features: features,
+            itemOffset: itemOffset | 0,
+            itemLength: itemLength | 0
         };
 
         function featureTagToString(tag) {
@@ -235,8 +237,15 @@ internal external fun jsBuildShapeRunPayload(
     featureStarts: JsAny?,
     featureEnds: JsAny?,
     count: Int,
+    itemOffset: Int,
+    itemLength: Int,
 ): JsAny
 
+/**
+ * [itemOffset]/[itemLength] select the shaped slice of [text] when
+ * [itemLength] is `>= 0` (pre/post-context shaping); `itemLength == -1`
+ * shapes the whole string, matching the legacy wire behaviour.
+ */
 internal fun buildShapeRunPayload(
     fontId: Int,
     sizePx: Float,
@@ -245,9 +254,14 @@ internal fun buildShapeRunPayload(
     scriptTag: Int,
     language: String,
     features: List<HbFeature>,
+    itemOffset: Int = 0,
+    itemLength: Int = -1,
 ): JsAny {
     if (features.isEmpty()) {
-        return jsBuildShapeRunPayload(fontId, sizePx, text, direction, scriptTag, language, null, null, null, null, 0)
+        return jsBuildShapeRunPayload(
+            fontId, sizePx, text, direction, scriptTag, language,
+            null, null, null, null, 0, itemOffset, itemLength,
+        )
     }
     val tags = IntArray(features.size) { features[it].tag.raw.toInt() }
     val values = IntArray(features.size) { features[it].value.toInt() }
@@ -268,6 +282,8 @@ internal fun buildShapeRunPayload(
         featureStarts = starts.toJsInt32Array(),
         featureEnds = ends.toJsInt32Array(),
         count = features.size,
+        itemOffset = itemOffset,
+        itemLength = itemLength,
     )
 }
 

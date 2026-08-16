@@ -1143,6 +1143,30 @@ JNIEXPORT void JNICALL KH_FN(bufferSetText)(JNIEnv* env, jclass, jlong bufferPtr
     env->ReleaseStringCritical(text, chars);
 }
 
+JNIEXPORT void JNICALL KH_FN(bufferSetTextWithContext)(JNIEnv* env, jclass, jlong bufferPtr,
+                                                       jstring text, jint itemOffset, jint itemLength) {
+    if (bufferPtr == 0 || text == nullptr) return;
+    hb_buffer_t* buf = asBuffer(bufferPtr);
+    hb_buffer_clear_contents(buf);
+
+    jsize length = env->GetStringLength(text);
+    if (itemOffset < 0 || itemLength < 0 || itemOffset + itemLength > length) return;
+    const jchar* chars = env->GetStringCritical(text, nullptr);
+    if (chars == nullptr) return;
+
+    // The full string is loaded so HarfBuzz sees pre/post context around
+    // the slice, but only [itemOffset, itemOffset + itemLength) is shaped.
+    // Cluster values come back relative to the full string.
+    hb_buffer_add_utf16(
+        buf,
+        reinterpret_cast<const uint16_t*>(chars),
+        static_cast<int>(length),
+        static_cast<unsigned int>(itemOffset),
+        static_cast<int>(itemLength)
+    );
+    env->ReleaseStringCritical(text, chars);
+}
+
 JNIEXPORT void JNICALL KH_FN(bufferSetDirection)(JNIEnv*, jclass, jlong bufferPtr, jint direction) {
     if (bufferPtr == 0) return;
     hb_buffer_set_direction(asBuffer(bufferPtr), static_cast<hb_direction_t>(direction));

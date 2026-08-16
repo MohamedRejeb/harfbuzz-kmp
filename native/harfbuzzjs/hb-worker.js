@@ -426,14 +426,23 @@ function packFeatures(features) {
 
 // ───── Single-run shape (mirror of HbFont.shape on main) ──────────────────
 
-async function rpcShapeRun({ fontId, sizePx, text, direction, scriptTag, language, features }) {
+async function rpcShapeRun({ fontId, sizePx, text, direction, scriptTag, language, features, itemOffset, itemLength }) {
     const h = await ensureHb();
     const fontEntry = fonts.get(fontId);
     if (!fontEntry) throw new Error(`unknown fontId ${fontId}`);
     setFontScale(fontEntry.js, sizePx);
     const buf = h.createBuffer();
     try {
-        if (text && text.length > 0) buf.addText(text);
+        if (text && text.length > 0) {
+            // itemLength >= 0 selects a slice with the rest of the string as
+            // pre/post context (joining forms survive segment boundaries);
+            // -1 or absent shapes the whole string as before.
+            if (itemLength != null && itemLength >= 0) {
+                buf.addText(text, itemOffset | 0, itemLength | 0);
+            } else {
+                buf.addText(text);
+            }
+        }
         if (direction && direction !== 'auto') {
             buf.setDirection(direction);
         }

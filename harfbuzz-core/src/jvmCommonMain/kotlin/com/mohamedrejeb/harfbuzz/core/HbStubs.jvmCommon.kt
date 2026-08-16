@@ -493,6 +493,18 @@ public actual class HbBuffer actual constructor() : AutoCloseable {
             HarfbuzzNative.bufferSetLanguage(ptr, if (_language == HbLanguage.AUTO) null else _language.bcp47)
         }
 
+    public actual fun setTextWithContext(contextText: String, itemOffset: Int, itemLength: Int) {
+        throwIfDisposed(closed)
+        // Mirror the `text` setter: bufferSetTextWithContext clears the
+        // buffer contents, which also drops direction/script/language, so
+        // re-apply them. The `text` mirror field is not updated here; it
+        // only reflects whole-string loads and reset() clears it.
+        HarfbuzzNative.bufferSetTextWithContext(ptr, contextText, itemOffset, itemLength)
+        HarfbuzzNative.bufferSetDirection(ptr, _direction.toNative())
+        HarfbuzzNative.bufferSetScript(ptr, _script.tag.raw.toInt())
+        HarfbuzzNative.bufferSetLanguage(ptr, if (_language == HbLanguage.AUTO) null else _language.bcp47)
+    }
+
     private var _direction: HbDirection = HbDirection.AUTO
     public actual var direction: HbDirection
         get() = _direction

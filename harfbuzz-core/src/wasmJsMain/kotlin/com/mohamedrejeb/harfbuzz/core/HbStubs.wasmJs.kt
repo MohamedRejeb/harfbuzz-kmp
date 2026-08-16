@@ -257,14 +257,17 @@ public actual class HbFont internal constructor(
     public actual suspend fun shape(buffer: HbBuffer, sizePx: Float): ShapedRun {
         throwIfDisposed(closed)
         check(!buffer.isClosed) { "hb object disposed" }
+        val ctx = buffer.contextText
         val payload = buildShapeRunPayload(
             fontId = fontId.toInt(),
             sizePx = sizePx,
-            text = buffer.text,
+            text = ctx ?: buffer.text,
             direction = bufferDirectionToString(buffer.direction),
             scriptTag = buffer.script.tag.raw.toInt(),
             language = languageToTag(buffer.language),
             features = buffer.features,
+            itemOffset = if (ctx != null) buffer.contextItemOffset else 0,
+            itemLength = if (ctx != null) buffer.contextItemLength else -1,
         )
         val reply = HbWorker.send("shapeRun", payload)
             ?: return ShapedRun.EMPTY.copy(direction = buffer.direction, script = buffer.script)
@@ -413,11 +416,29 @@ public actual class HbFont internal constructor(
 public actual class HbBuffer actual constructor() : AutoCloseable {
     private var closed: Boolean = false
 
+    // Context-mode state for [setTextWithContext]: serialised into the
+    // `shapeRun` RPC payload so the worker loads the full string but
+    // shapes only the slice. A plain `text` assignment cancels it.
+    internal var contextText: String? = null
+    internal var contextItemOffset: Int = 0
+    internal var contextItemLength: Int = 0
+
     public actual var text: String = ""
         set(value) {
             throwIfDisposed(closed)
             field = value
+            contextText = null
+            contextItemOffset = 0
+            contextItemLength = 0
         }
+
+    public actual fun setTextWithContext(contextText: String, itemOffset: Int, itemLength: Int) {
+        throwIfDisposed(closed)
+        if (itemOffset < 0 || itemLength < 0 || itemOffset + itemLength > contextText.length) return
+        this.contextText = contextText
+        this.contextItemOffset = itemOffset
+        this.contextItemLength = itemLength
+    }
 
     public actual var direction: HbDirection = HbDirection.AUTO
         set(value) {
