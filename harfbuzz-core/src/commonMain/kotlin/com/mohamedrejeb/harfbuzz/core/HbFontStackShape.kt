@@ -26,6 +26,17 @@ package com.mohamedrejeb.harfbuzz.core
  * [ShapedRun.font] - no extra shaping work happens. Otherwise each
  * direction-run does at minimum one extra `font.shape()` call when
  * fallback is needed.
+ *
+ * @param fontRuns Authored font assignments over ranges of [text]
+ *   (UTF-16 offsets). Each range's font is tried first for that range;
+ *   glyphs it cannot resolve fall back through the stack's fallbacks
+ *   and system resolution exactly like the primary does. Out-of-range
+ *   runs are clamped, empty or inverted runs ignored, and overlaps
+ *   resolve last-wins. Authored boundaries add segmentation points on
+ *   top of the BiDi and coverage segmentation; every segment is shaped
+ *   with the surrounding text as HarfBuzz pre/post context, so Arabic
+ *   joining forms survive a boundary in the middle of a word. The
+ *   caller retains ownership of the fonts, same as the stack fonts.
  */
 public suspend fun HbFontStack.shapeParagraph(
     text: String,
@@ -33,6 +44,7 @@ public suspend fun HbFontStack.shapeParagraph(
     baseDirection: HbDirection = HbDirection.AUTO,
     features: List<HbFeature> = emptyList(),
     language: HbLanguage = HbLanguage.AUTO,
+    fontRuns: List<FontRun> = emptyList(),
 ): ShapedParagraph {
     val systemResolver = systemResolverOrNull()
 
@@ -47,7 +59,10 @@ public suspend fun HbFontStack.shapeParagraph(
     // (e.g. an Arabic-only decorative font) shaping English text produces
     // all-notdef output; returning that early would silently skip the
     // system fallback that the non-boring path consults.
+    // Both fast paths emit single-font output, so any authored run
+    // disables them and routes through the segmenting path below.
     if (
+        fontRuns.isEmpty() &&
         text.isNotEmpty() &&
         fallbacks.isEmpty() &&
         baseDirection != HbDirection.RTL &&
@@ -72,7 +87,7 @@ public suspend fun HbFontStack.shapeParagraph(
         if (fast != null) return fast
     }
 
-    if (fallbacks.isEmpty() && systemResolver == null) {
+    if (fontRuns.isEmpty() && fallbacks.isEmpty() && systemResolver == null) {
         // Fast path: no fallback chain and no system resolver. Delegate to
         // single-font shaping and just tag every run with the primary font.
         val p = primary.shapeParagraph(text, sizePx, baseDirection, features, language)
@@ -82,6 +97,8 @@ public suspend fun HbFontStack.shapeParagraph(
     if (text.isEmpty()) {
         return ShapedParagraph.EMPTY.copy(baseDirection = baseDirection)
     }
+
+    val normalizedRuns = normalizeFontRuns(fontRuns, text.length)
 
     val resolver = BidiResolver()
     val bidiRuns = resolver.resolve(text, baseDirection)
@@ -109,33 +126,51 @@ public suspend fun HbFontStack.shapeParagraph(
         var inkBottom = Float.NEGATIVE_INFINITY
 
         for (run in visualOrder) {
-            val runText = text.substring(run.start, run.end)
-            if (runText.isEmpty()) continue
+            if (run.end <= run.start) continue
+            val segments = segmentRange(run.start, run.end, normalizedRuns)
+            // Visual order within an RTL bidi run flows right-to-left, so
+            // authored segments are emitted in reverse source order there.
+            val visualSegments = if (run.isRtl) segments.asReversed() else segments
 
-            val pieces = shapeRunWithFallback(
-                text = runText,
-                isRtl = run.isRtl,
-                language = language,
-                features = features,
-                fonts = fonts,
-                systemResolver = systemResolver,
-                sizePx = sizePx,
-                buffer = buf,
-            )
-
-            for (piece in pieces) {
-                // Offset clusters from sub-substring-relative to paragraph-relative.
-                val rebased = piece.copy(
-                    glyphs = piece.glyphs.map { it.copy(cluster = it.cluster + run.start) },
-                )
-                if (!rebased.ink.isEmpty) {
-                    inkLeft = minOf(inkLeft, totalAdvance + rebased.ink.left)
-                    inkTop = minOf(inkTop, rebased.ink.top)
-                    inkRight = maxOf(inkRight, totalAdvance + rebased.ink.right)
-                    inkBottom = maxOf(inkBottom, rebased.ink.bottom)
+            for (seg in visualSegments) {
+                val segText = text.substring(seg.start, seg.end)
+                if (segText.isEmpty()) continue
+                val segFonts = if (seg.font != null) {
+                    buildList(fonts.size + 1) {
+                        add(seg.font)
+                        addAll(fonts)
+                    }
+                } else {
+                    fonts
                 }
-                outRuns.add(rebased)
-                totalAdvance += rebased.totalAdvance
+
+                val pieces = shapeRunWithFallback(
+                    text = segText,
+                    isRtl = run.isRtl,
+                    language = language,
+                    features = features,
+                    fonts = segFonts,
+                    systemResolver = systemResolver,
+                    sizePx = sizePx,
+                    buffer = buf,
+                    contextText = if (normalizedRuns.isEmpty()) null else text,
+                    contextOffset = seg.start,
+                )
+
+                for (piece in pieces) {
+                    // Offset clusters from segment-relative to paragraph-relative.
+                    val rebased = piece.copy(
+                        glyphs = piece.glyphs.map { it.copy(cluster = it.cluster + seg.start) },
+                    )
+                    if (!rebased.ink.isEmpty) {
+                        inkLeft = minOf(inkLeft, totalAdvance + rebased.ink.left)
+                        inkTop = minOf(inkTop, rebased.ink.top)
+                        inkRight = maxOf(inkRight, totalAdvance + rebased.ink.right)
+                        inkBottom = maxOf(inkBottom, rebased.ink.bottom)
+                    }
+                    outRuns.add(rebased)
+                    totalAdvance += rebased.totalAdvance
+                }
             }
         }
 
@@ -190,10 +225,18 @@ private suspend fun shapeRunWithFallback(
      * combining mark) can't recurse forever.
      */
     systemDepth: Int = 0,
+    /**
+     * Non-null when this segment is a slice of a larger paragraph whose
+     * surrounding characters should act as HarfBuzz pre/post context
+     * (authored font runs). [contextOffset] is [text]'s absolute start
+     * inside it. Null preserves the legacy standalone-slice behaviour.
+     */
+    contextText: String? = null,
+    contextOffset: Int = 0,
 ): List<ShapedRun> {
     if (text.isEmpty() || fonts.isEmpty()) return emptyList()
     val primary = fonts.first()
-    val primaryRun = shapeOnce(text, primary, sizePx, isRtl, language, features, buffer)
+    val primaryRun = shapeOnce(text, primary, sizePx, isRtl, language, features, buffer, contextText, contextOffset)
 
     // Bottom of the explicit chain AND no system resolver → accept primary.
     if (fonts.size == 1 && systemResolver == null) return listOf(primaryRun)
@@ -259,7 +302,7 @@ private suspend fun shapeRunWithFallback(
                 // HarfBuzz pick the right script per-substring; the cost is one
                 // extra shape() per resolved interval which is negligible for
                 // the typical mostly-resolved-or-fully-unresolved input.
-                listOf(shapeOnce(sub, primary, sizePx, isRtl, language, features, buffer))
+                listOf(shapeOnce(sub, primary, sizePx, isRtl, language, features, buffer, contextText, contextOffset + start))
             }
             fonts.size > 1 -> {
                 // Recurse into the next font in the explicit chain. The system
@@ -275,6 +318,8 @@ private suspend fun shapeRunWithFallback(
                     sizePx = sizePx,
                     buffer = buffer,
                     systemDepth = systemDepth,
+                    contextText = contextText,
+                    contextOffset = contextOffset + start,
                 )
             }
             systemResolver != null -> {
@@ -306,21 +351,23 @@ private suspend fun shapeRunWithFallback(
                         sizePx = sizePx,
                         buffer = buffer,
                         systemDepth = systemDepth + 1,
+                        contextText = contextText,
+                        contextOffset = contextOffset + start,
                     )
                 } else if (sysFont != null) {
                     // Depth cap reached - accept this font's shape as-is.
-                    listOf(shapeOnce(sub, sysFont, sizePx, isRtl, language, features, buffer))
+                    listOf(shapeOnce(sub, sysFont, sizePx, isRtl, language, features, buffer, contextText, contextOffset + start))
                 } else {
                     // System has nothing either - fall back to the primary's
                     // notdef glyphs for this interval (already shaped above as
                     // part of primaryRun, but re-shape the slice to keep the
                     // sub-run output consistent and font-tagged correctly).
-                    listOf(shapeOnce(sub, primary, sizePx, isRtl, language, features, buffer))
+                    listOf(shapeOnce(sub, primary, sizePx, isRtl, language, features, buffer, contextText, contextOffset + start))
                 }
             }
             else -> {
                 // Tail of the chain with no system fallback → keep notdefs.
-                listOf(shapeOnce(sub, primary, sizePx, isRtl, language, features, buffer))
+                listOf(shapeOnce(sub, primary, sizePx, isRtl, language, features, buffer, contextText, contextOffset + start))
             }
         }
         for (p in pieces) {
@@ -339,15 +386,25 @@ private suspend fun shapeOnce(
     language: HbLanguage,
     features: List<HbFeature>,
     buffer: HbBuffer,
+    contextText: String? = null,
+    contextOffset: Int = 0,
 ): ShapedRun {
     buffer.reset()
-    buffer.text = text
+    if (contextText != null) {
+        buffer.setTextWithContext(contextText, contextOffset, text.length)
+    } else {
+        buffer.text = text
+    }
     buffer.direction = if (isRtl) HbDirection.RTL else HbDirection.LTR
     // Leave script as default so HarfBuzz auto-detects per substring (matches
     // the single-font ShapingHelpers pragma).
     buffer.language = language
     buffer.features = features
-    return font.shape(buffer, sizePx).copy(font = font)
+    val run = font.shape(buffer, sizePx).copy(font = font)
+    if (contextText == null || contextOffset == 0) return run
+    // Context shaping reports clusters relative to contextText; bring them
+    // back to slice-relative so the caller's rebase arithmetic is uniform.
+    return run.copy(glyphs = run.glyphs.map { it.copy(cluster = it.cluster - contextOffset) })
 }
 
 private data class IntervalRange(val start: Int, val end: Int, val isNotdef: Boolean)
