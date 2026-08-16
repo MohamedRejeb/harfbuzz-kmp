@@ -53,6 +53,21 @@ public class MeasuredText internal constructor(
     /** Extra vertical space the font designer recommends between lines. */
     public val lineGap: Float,
     /**
+     * Effective ascent for mixed-font shapes: the maximum ascent across
+     * the base font and every font that contributed glyphs (authored
+     * runs, fallbacks, system resolution). Equals [ascent] for
+     * single-font shapes and empty text. [ascent], [descent] and
+     * [lineGap] always report the base (primary) font alone, so callers
+     * planning line boxes for mixed-font text should reserve
+     * `maxAscent + maxDescent` (plus [maxLineGap]) so no contributing
+     * font clips.
+     */
+    public val maxAscent: Float = ascent,
+    /** Effective descent for mixed-font shapes; see [maxAscent]. */
+    public val maxDescent: Float = descent,
+    /** Effective line gap for mixed-font shapes; see [maxAscent]. */
+    public val maxLineGap: Float = lineGap,
+    /**
      * Length of the source text in UTF-16 code units, in the **original
      * text's** coordinate space. The char-keyed accessors
      * ([horizontalPositionOf], [advanceWidthOf], [clusterAt]) accept
@@ -517,6 +532,9 @@ internal fun MeasuredText.withOriginalMapping(
     ascent = ascent,
     descent = descent,
     lineGap = lineGap,
+    maxAscent = maxAscent,
+    maxDescent = maxDescent,
+    maxLineGap = maxLineGap,
     textLength = originalTextLength,
     flippedPathsByFont = flippedPathsByFont,
     rawPathsByFont = rawPathsByFont,
@@ -559,6 +577,9 @@ internal fun MeasuredText.withStretchedParagraph(
         ascent = ascent,
         descent = descent,
         lineGap = lineGap,
+        maxAscent = maxAscent,
+        maxDescent = maxDescent,
+        maxLineGap = maxLineGap,
         textLength = textLength,
         flippedPathsByFont = flippedPathsByFont,
         rawPathsByFont = rawPathsByFont,
@@ -602,6 +623,9 @@ internal fun MeasuredText.withFilledParagraph(filled: ShapedParagraph): Measured
         ascent = ascent,
         descent = descent,
         lineGap = lineGap,
+        maxAscent = maxAscent,
+        maxDescent = maxDescent,
+        maxLineGap = maxLineGap,
         textLength = textLength,
         flippedPathsByFont = flippedPathsByFont,
         rawPathsByFont = rawPathsByFont,
@@ -650,6 +674,9 @@ public fun MeasuredText.withLetterSpacing(perGapPx: Float): MeasuredText {
         ascent = ascent,
         descent = descent,
         lineGap = lineGap,
+        maxAscent = maxAscent,
+        maxDescent = maxDescent,
+        maxLineGap = maxLineGap,
         textLength = textLength,
         flippedPathsByFont = flippedPathsByFont,
         rawPathsByFont = rawPathsByFont,

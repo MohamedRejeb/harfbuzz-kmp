@@ -108,6 +108,51 @@ class FontRunsMeasuredTextTest {
         }
     }
 
+    @Test
+    fun `max metrics cover every contributing font while base metrics stay primary`() = runBlocking {
+        harfBuzzInit()
+        clearMeasuredTextCacheForTest()
+        withNotoAndSaudi { noto, saudi ->
+            val text = "مرحبا بالعالم"
+            val stack = HbFontStack(noto)
+            val notoExt = requireNotNull(noto.hExtents(48f))
+            val saudiExt = requireNotNull(saudi.hExtents(48f))
+
+            val single = buildMeasuredText(text, stack, 48f, emptyList(), HbDirection.RTL, HbLanguage.AUTO)
+            assertEquals(single.ascent, single.maxAscent)
+            assertEquals(single.descent, single.maxDescent)
+
+            val mixed = buildMeasuredText(
+                text, stack, 48f, emptyList(), HbDirection.RTL, HbLanguage.AUTO,
+                listOf(FontRun(0, 5, saudi)),
+            )
+            assertEquals(notoExt.ascender, mixed.ascent, 0.01f)
+            assertEquals(maxOf(notoExt.ascender, saudiExt.ascender), mixed.maxAscent, 0.01f)
+            assertEquals(maxOf(-notoExt.descender, -saudiExt.descender), mixed.maxDescent, 0.01f)
+            assertTrue(mixed.maxAscent >= mixed.ascent)
+            assertTrue(mixed.maxDescent >= mixed.descent)
+        }
+    }
+
+    @Test
+    fun `empty text reports base font metrics`() = runBlocking {
+        harfBuzzInit()
+        clearMeasuredTextCacheForTest()
+        withNotoAndSaudi { noto, _ ->
+            val stack = HbFontStack(noto)
+            val ext = requireNotNull(noto.hExtents(48f))
+            val measured = buildMeasuredText("", stack, 48f, emptyList(), HbDirection.AUTO, HbLanguage.AUTO)
+            assertTrue(measured.isEmpty)
+            assertEquals(0f, measured.advance)
+            assertEquals(0, measured.textLength)
+            assertEquals(ext.ascender, measured.ascent, 0.01f)
+            assertEquals(-ext.descender, measured.descent, 0.01f)
+            assertEquals(ext.lineGap, measured.lineGap, 0.01f)
+            assertEquals(measured.ascent, measured.maxAscent)
+            assertEquals(measured.descent, measured.maxDescent)
+        }
+    }
+
     private suspend fun withNotoAndSaudi(block: suspend (noto: HbFont, saudi: HbFont) -> Unit) {
         val notoFace = HbFace.fromBytes(TestFonts.notoNaskhArabicMedium())
         val saudiFace = HbFace.fromBytes(TestFonts.saudiRegular())

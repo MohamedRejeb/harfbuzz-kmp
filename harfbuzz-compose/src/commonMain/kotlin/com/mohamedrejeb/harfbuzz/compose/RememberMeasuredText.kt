@@ -15,6 +15,7 @@ import com.mohamedrejeb.harfbuzz.core.HbFontStack
 import com.mohamedrejeb.harfbuzz.core.HbLanguage
 import com.mohamedrejeb.harfbuzz.core.MeasuredFontPass
 import com.mohamedrejeb.harfbuzz.core.RecordedPaintOp
+import com.mohamedrejeb.harfbuzz.core.ShapedParagraph
 import com.mohamedrejeb.harfbuzz.core.buildMeasured
 import com.mohamedrejeb.harfbuzz.core.defaultFlagsFor
 import com.mohamedrejeb.harfbuzz.core.paragraph.AdvanceStretchJustifier
@@ -325,7 +326,35 @@ private suspend fun buildMeasuredTextUncached(
     language: HbLanguage,
     fontRuns: List<FontRun> = emptyList(),
 ): MeasuredText = runShapingWork {
-    if (text.isEmpty()) return@runShapingWork MeasuredText.empty(fontStack.primary, sizePx)
+    if (text.isEmpty()) {
+        // Zero geometry, but real vertical metrics: callers planning line
+        // boxes rely on the ascent/descent slots even for empty lines.
+        val ext = runCatching { fontStack.primary.hExtents(sizePx) }.getOrNull()
+        val emptyAscent = ext?.ascender ?: (sizePx * 0.8f)
+        val emptyDescent = ext?.let { -it.descender } ?: (sizePx * 0.2f)
+        val emptyLineGap = ext?.lineGap ?: 0f
+        return@runShapingWork MeasuredText(
+            paragraph = ShapedParagraph.EMPTY,
+            fontStack = fontStack,
+            sizePx = sizePx,
+            ink = Rect.Zero,
+            logical = Rect(0f, -emptyAscent, 0f, emptyDescent + emptyLineGap),
+            baseline = emptyAscent,
+            advance = 0f,
+            ascent = emptyAscent,
+            descent = emptyDescent,
+            lineGap = emptyLineGap,
+            textLength = 0,
+            flippedPathsByFont = emptyMap(),
+            rawPathsByFont = emptyMap(),
+            colorLayersByFont = emptyMap(),
+            paintTreesByFont = emptyMap(),
+            svgGlyphCachesByFont = emptyMap(),
+            hasColorGlyphs = false,
+            hasColorPaintTree = false,
+            hasColorSvg = false,
+        )
+    }
 
     val perFontFlags = fontStack.fonts.map { defaultFlagsFor(it) }
     val pass = fontStack.buildMeasured(
@@ -381,6 +410,23 @@ private suspend fun buildMeasuredTextUncached(
     val lineGap = ext?.lineGap ?: 0f
     val baseline = ascent
 
+    // Effective line metrics: max across the base font and every font
+    // that contributed a glyph run. hExtents is one dispatcher hop per
+    // extra font; contributing sets are tiny in practice.
+    var maxAscent = ascent
+    var maxDescent = descent
+    var maxLineGap = lineGap
+    val contributing = LinkedHashSet<HbFont>().apply {
+        for (run in pass.paragraph.runs) run.font?.let { add(it) }
+        remove(fontStack.primary)
+    }
+    for (f in contributing) {
+        val fx = runCatching { f.hExtents(sizePx) }.getOrNull() ?: continue
+        maxAscent = maxOf(maxAscent, fx.ascender)
+        maxDescent = maxOf(maxDescent, -fx.descender)
+        maxLineGap = maxOf(maxLineGap, fx.lineGap)
+    }
+
     val ink = if (pass.paragraph.ink.isEmpty) Rect.Zero
     else Rect(pass.paragraph.ink.left, pass.paragraph.ink.top, pass.paragraph.ink.right, pass.paragraph.ink.bottom)
     val logical = Rect(0f, -ascent, advance, descent + lineGap)
@@ -396,6 +442,9 @@ private suspend fun buildMeasuredTextUncached(
         ascent = ascent,
         descent = descent,
         lineGap = lineGap,
+        maxAscent = maxAscent,
+        maxDescent = maxDescent,
+        maxLineGap = maxLineGap,
         textLength = text.length,
         flippedPathsByFont = flippedPathsByFont,
         rawPathsByFont = rawPathsByFont,
