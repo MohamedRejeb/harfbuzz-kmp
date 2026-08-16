@@ -134,8 +134,9 @@ public suspend fun buildMeasuredTextWithJustify(
     language: HbLanguage,
     maxWidth: Float,
     justification: JustificationStrategy,
+    fontRuns: List<FontRun> = emptyList(),
 ): MeasuredText {
-    val initial = buildMeasuredText(text, fontStack, sizePx, features, direction, language)
+    val initial = buildMeasuredText(text, fontStack, sizePx, features, direction, language, fontRuns)
     val targetWidth = when (justification) {
         is JustificationStrategy.KashidaTo -> justification.targetWidthPx
         is JustificationStrategy.AdvanceStretchTo -> justification.targetWidthPx
@@ -175,11 +176,41 @@ public suspend fun buildMeasuredTextWithJustify(
         thinSpaceWidth = thinSpaceWidth,
     )
     if (justified.justifiedText.length == text.length) return initial
+    // Project authored ranges into the justified text so the re-shape
+    // keeps each range, connectors included, under its authored font.
+    val justifiedFontRuns = justified.originalToJustifiedIndex?.let { m ->
+        remapFontRunsToJustified(fontRuns, m, text.length, justified.justifiedText.length)
+    } ?: fontRuns
     val shaped = buildMeasuredText(
-        justified.justifiedText, fontStack, sizePx, features, direction, language,
+        justified.justifiedText, fontStack, sizePx, features, direction, language, justifiedFontRuns,
     )
     val mapping = justified.originalToJustifiedIndex ?: return shaped
     return shaped.withOriginalMapping(originalTextLength = text.length, mapping = mapping)
+}
+
+/**
+ * Project authored runs (original-text offsets) into the justified
+ * text's coordinates so the re-shape after kashida or thin-space
+ * insertion keeps each range, including connectors inserted inside it,
+ * under its authored font. A connector inserted between original chars
+ * `i` and `i + 1` lands with the run that contains `i` (it joins to
+ * the previous letter).
+ */
+private fun remapFontRunsToJustified(
+    fontRuns: List<FontRun>,
+    mapping: IntArray,
+    originalLength: Int,
+    justifiedLength: Int,
+): List<FontRun> {
+    if (fontRuns.isEmpty()) return fontRuns
+    return fontRuns.mapNotNull { run ->
+        val s = run.start.coerceIn(0, originalLength)
+        val e = run.end.coerceIn(0, originalLength)
+        if (e <= s) return@mapNotNull null
+        val js = mapping[s]
+        val je = if (e >= originalLength) justifiedLength else mapping[e]
+        if (je <= js) null else FontRun(js, je, run.font)
+    }
 }
 
 /**
@@ -203,6 +234,11 @@ public suspend fun buildMeasuredTextWithJustify(
  *
  * Returns the natural shape unchanged when [text] is empty, [targetWidthPx] is
  * non-finite / non-positive, or the natural advance already meets the target.
+ *
+ * With [fontRuns], the coarse Kashida count is still estimated from a
+ * single stack-shaped tatweel; per-range tatweel widths can differ, but
+ * the geometric fine pass closes the residual, so the exact-width
+ * guarantee holds on mixed-font lines too.
  */
 public suspend fun buildMeasuredTextJustified(
     text: String,
@@ -212,8 +248,9 @@ public suspend fun buildMeasuredTextJustified(
     direction: HbDirection,
     language: HbLanguage,
     targetWidthPx: Float,
+    fontRuns: List<FontRun> = emptyList(),
 ): MeasuredText {
-    val natural = buildMeasuredText(text, fontStack, sizePx, features, direction, language)
+    val natural = buildMeasuredText(text, fontStack, sizePx, features, direction, language, fontRuns)
     if (
         text.isEmpty() ||
         !targetWidthPx.isFinite() ||
@@ -234,6 +271,7 @@ public suspend fun buildMeasuredTextJustified(
             language = language,
             maxWidth = targetWidthPx,
             justification = JustificationStrategy.KashidaTo(targetWidthPx),
+            fontRuns = fontRuns,
         )
         // Guard against a font whose in-context Kashida runs wider than the
         // standalone estimate (would push past target): fall back to natural,

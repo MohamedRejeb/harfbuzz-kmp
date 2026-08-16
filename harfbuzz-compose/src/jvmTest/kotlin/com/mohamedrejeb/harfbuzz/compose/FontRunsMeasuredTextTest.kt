@@ -7,6 +7,7 @@ import com.mohamedrejeb.harfbuzz.core.HbFont
 import com.mohamedrejeb.harfbuzz.core.HbFontStack
 import com.mohamedrejeb.harfbuzz.core.HbLanguage
 import com.mohamedrejeb.harfbuzz.core.harfBuzzInit
+import com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy
 import kotlinx.coroutines.runBlocking
 import kotlin.math.abs
 import kotlin.test.Test
@@ -105,6 +106,41 @@ class FontRunsMeasuredTextTest {
                 roboto.close()
                 robotoFace.close()
             }
+        }
+    }
+
+    @Test
+    fun `kashida-justified authored shape keeps original indices and authored tatweels`() = runBlocking {
+        harfBuzzInit()
+        clearMeasuredTextCacheForTest()
+        withNotoAndSaudi { noto, saudi ->
+            val text = "مرحبا بالعالم"
+            val stack = HbFontStack(noto)
+            val natural = buildMeasuredText(text, stack, 48f, emptyList(), HbDirection.RTL, HbLanguage.AUTO)
+            val target = natural.advance + 150f
+            val runs = listOf(FontRun(0, 5, saudi))
+            val justified = buildMeasuredTextWithJustify(
+                text, stack, 48f, emptyList(), HbDirection.RTL, HbLanguage.AUTO,
+                maxWidth = target,
+                justification = JustificationStrategy.KashidaTo(target),
+                fontRuns = runs,
+            )
+            // Index accessors stay in the original text's coordinates.
+            assertEquals(text.length, justified.textLength)
+            for (i in 0..justified.textLength) {
+                justified.horizontalPositionOf(i)
+            }
+            // Tatweels inserted inside the authored first word must be
+            // shaped by the authored font: its runs carry its tatweel gid.
+            val saudiTatweel = saudi.glyphIdForCodepoint(0x0640)
+            val tatweelInAuthoredRuns = justified.paragraph.runs
+                .filter { it.font == saudi }
+                .sumOf { run -> run.glyphs.count { it.glyphId == saudiTatweel } }
+            assertTrue(
+                tatweelInAuthoredRuns > 0,
+                "expected authored-font tatweels, got runs " +
+                    justified.paragraph.runs.map { r -> r.font to r.glyphs.map { it.glyphId } },
+            )
         }
     }
 
