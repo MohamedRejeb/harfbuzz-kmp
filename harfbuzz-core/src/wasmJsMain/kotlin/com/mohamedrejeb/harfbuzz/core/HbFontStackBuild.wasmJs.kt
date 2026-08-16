@@ -18,8 +18,13 @@ internal actual suspend fun HbFontStack.tryBuildMeasuredFastPath(
     features: List<HbFeature>,
     language: HbLanguage,
     perFontFlags: List<GlyphSnapshotFlags>,
+    fontRuns: List<FontRun>,
 ): MeasuredPass? {
     if (text.isEmpty() || fonts.isEmpty()) return null
+
+    // The mega-RPC has no authored-run concept; fall back to the portable
+    // shapeParagraph plus snapshot path, which does (slower but correct).
+    if (fontRuns.isNotEmpty()) return null
 
     // Surface stale-handle races as the same IllegalStateException the
     // single-RPC paths emit, so produceState's `isStaleHbHandle` swallow

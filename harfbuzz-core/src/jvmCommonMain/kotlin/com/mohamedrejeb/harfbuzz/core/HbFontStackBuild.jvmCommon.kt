@@ -13,6 +13,7 @@ internal actual suspend fun HbFontStack.tryBuildMeasuredFastPath(
     features: List<HbFeature>,
     language: HbLanguage,
     perFontFlags: List<GlyphSnapshotFlags>,
+    fontRuns: List<FontRun>,
 ): MeasuredPass? = null
 
 /** JVM/Android: the JNI `fontGlyphSvgSliced` slices in C++ before crossing JNI. */
