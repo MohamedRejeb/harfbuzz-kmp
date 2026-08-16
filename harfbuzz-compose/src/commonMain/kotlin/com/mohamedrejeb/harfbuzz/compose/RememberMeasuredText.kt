@@ -54,9 +54,10 @@ public fun rememberMeasuredText(
     language: HbLanguage = HbLanguage.AUTO,
     maxWidth: Float = Float.POSITIVE_INFINITY,
     justification: JustificationStrategy = JustificationStrategy.None,
+    fontRuns: List<FontRun> = emptyList(),
 ): State<MeasuredTextLoad> {
     val stack = remember(font) { HbFontStack(font) }
-    return rememberMeasuredText(text, stack, sizePx, features, direction, language, maxWidth, justification)
+    return rememberMeasuredText(text, stack, sizePx, features, direction, language, maxWidth, justification, fontRuns)
 }
 
 /**
@@ -71,6 +72,12 @@ public fun rememberMeasuredText(
  * with extra Kashida / thin-space glyphs (see [LineJustifier]). When
  * the original advance already meets or exceeds [maxWidth] the input is
  * returned as-is.
+ *
+ * [fontRuns] carries authored font assignments over ranges of [text]
+ * (original-text UTF-16 offsets; clamp and last-wins semantics, see
+ * [com.mohamedrejeb.harfbuzz.core.shapeParagraph]). The caller retains
+ * ownership of the fonts and must keep them alive while the returned
+ * state is in use, same as [fontStack]'s fonts.
  */
 @Composable
 public fun rememberMeasuredText(
@@ -82,17 +89,18 @@ public fun rememberMeasuredText(
     language: HbLanguage = HbLanguage.AUTO,
     maxWidth: Float = Float.POSITIVE_INFINITY,
     justification: JustificationStrategy = JustificationStrategy.None,
+    fontRuns: List<FontRun> = emptyList(),
 ): State<MeasuredTextLoad> {
     return produceState<MeasuredTextLoad>(
         initialValue = MeasuredTextLoad.Loading,
-        text, fontStack, sizePx, features, direction, language, maxWidth, justification,
+        text, fontStack, sizePx, features, direction, language, maxWidth, justification, fontRuns,
     ) {
         // Deliberately do NOT reset to Loading here: keep the previous
         // Ready value visible while the new build runs so size /
         // feature / justification animation does not blank the text.
         try {
             val measured = buildMeasuredTextWithJustify(
-                text, fontStack, sizePx, features, direction, language, maxWidth, justification,
+                text, fontStack, sizePx, features, direction, language, maxWidth, justification, fontRuns,
             )
             value = MeasuredTextLoad.Ready(measured)
         } catch (ce: CancellationException) {
