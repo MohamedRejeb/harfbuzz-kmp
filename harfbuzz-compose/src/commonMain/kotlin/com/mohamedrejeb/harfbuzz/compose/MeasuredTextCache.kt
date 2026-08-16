@@ -1,5 +1,6 @@
 package com.mohamedrejeb.harfbuzz.compose
 
+import com.mohamedrejeb.harfbuzz.core.FontRun
 import com.mohamedrejeb.harfbuzz.core.HbDirection
 import com.mohamedrejeb.harfbuzz.core.HbFeature
 import com.mohamedrejeb.harfbuzz.core.HbFont
@@ -114,6 +115,11 @@ internal fun quantizeSizePxForCache(sizePx: Float): Float {
  * (`remember(font) { HbFontStack(font) }`) preserves the font
  * reference across recomposition, so the cache still hits when it
  * matters.
+ *
+ * [fontRuns] follows the same identity semantics: [FontRun] equality is
+ * structural on the offsets and identity-based on the font, so a shape
+ * with authored runs never collides with the base-font shape of the
+ * same string, and per-axes font instances key separately.
  */
 internal data class MeasureKey(
     val text: String,
@@ -122,6 +128,7 @@ internal data class MeasureKey(
     val features: List<HbFeature>,
     val direction: HbDirection,
     val language: HbLanguage,
+    val fontRuns: List<FontRun> = emptyList(),
 )
 
 internal fun measureKeyOf(
@@ -131,6 +138,7 @@ internal fun measureKeyOf(
     features: List<HbFeature>,
     direction: HbDirection,
     language: HbLanguage,
+    fontRuns: List<FontRun> = emptyList(),
 ): MeasureKey = MeasureKey(
     text = text,
     fonts = fontStack.fonts,
@@ -138,4 +146,5 @@ internal fun measureKeyOf(
     features = features,
     direction = direction,
     language = language,
+    fontRuns = fontRuns,
 )

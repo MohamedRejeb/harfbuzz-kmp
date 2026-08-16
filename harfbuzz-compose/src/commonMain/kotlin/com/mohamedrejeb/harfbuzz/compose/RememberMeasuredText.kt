@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Path
 import com.mohamedrejeb.harfbuzz.core.ColorLayer
+import com.mohamedrejeb.harfbuzz.core.FontRun
 import com.mohamedrejeb.harfbuzz.core.HbDirection
 import com.mohamedrejeb.harfbuzz.core.HbFeature
 import com.mohamedrejeb.harfbuzz.core.HbFont
@@ -275,6 +276,14 @@ private fun wordGapGlyphIndices(measured: MeasuredText, text: String): IntArray?
 private fun isStaleHbHandle(cause: Throwable): Boolean =
     cause is IllegalStateException && cause.message == "hb object disposed"
 
+/**
+ * @param fontRuns Authored font assignments over ranges of [text]; see
+ *   [com.mohamedrejeb.harfbuzz.core.shapeParagraph]. Part of the cache
+ *   key, so shapes with and without authored runs never collide. The
+ *   caller retains ownership of the fonts and must keep them alive for
+ *   as long as the returned [MeasuredText] is in use, same as the
+ *   stack fonts.
+ */
 public suspend fun buildMeasuredText(
     text: String,
     fontStack: HbFontStack,
@@ -282,6 +291,7 @@ public suspend fun buildMeasuredText(
     features: List<HbFeature>,
     direction: HbDirection,
     language: HbLanguage,
+    fontRuns: List<FontRun> = emptyList(),
 ): MeasuredText {
     // Bucket the requested size to [SIZE_PX_BUCKET_PX] before keying the
     // cache and before passing it down to the shaper. Slider scrubs that
@@ -296,9 +306,9 @@ public suspend fun buildMeasuredText(
     // intentionally excludes paint-only props (color, alpha, shadow) so
     // animating them never invalidates the entry. See [MeasuredTextCache]
     // for the workloads this catches.
-    val cacheKey = measureKeyOf(text, fontStack, bucketedSizePx, features, direction, language)
+    val cacheKey = measureKeyOf(text, fontStack, bucketedSizePx, features, direction, language, fontRuns)
     MeasuredTextCache.get(cacheKey)?.let { return it }
-    val measured = buildMeasuredTextUncached(text, fontStack, bucketedSizePx, features, direction, language)
+    val measured = buildMeasuredTextUncached(text, fontStack, bucketedSizePx, features, direction, language, fontRuns)
     // Empty-text builds skip the cache: there's nothing to amortise and an
     // empty entry per (fontStack, features, ...) tuple would just pollute
     // the working set.
@@ -313,6 +323,7 @@ private suspend fun buildMeasuredTextUncached(
     features: List<HbFeature>,
     direction: HbDirection,
     language: HbLanguage,
+    fontRuns: List<FontRun> = emptyList(),
 ): MeasuredText = runShapingWork {
     if (text.isEmpty()) return@runShapingWork MeasuredText.empty(fontStack.primary, sizePx)
 
@@ -324,6 +335,7 @@ private suspend fun buildMeasuredTextUncached(
         features = features,
         language = language,
         perFontFlags = perFontFlags,
+        fontRuns = fontRuns,
     )
 
     val flippedPathsByFont = HashMap<HbFont, Map<Int, Path>>()
