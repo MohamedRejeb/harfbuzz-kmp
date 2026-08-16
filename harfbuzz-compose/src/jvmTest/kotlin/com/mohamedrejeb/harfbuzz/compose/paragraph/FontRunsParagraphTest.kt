@@ -10,9 +10,13 @@ import com.mohamedrejeb.harfbuzz.core.HbFont
 import com.mohamedrejeb.harfbuzz.core.HbFontStack
 import com.mohamedrejeb.harfbuzz.core.HbLanguage
 import com.mohamedrejeb.harfbuzz.core.harfBuzzInit
+import com.mohamedrejeb.harfbuzz.core.paragraph.AdvanceStretchJustifier
 import com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy
+import com.mohamedrejeb.harfbuzz.core.paragraph.LineJustifier
 import com.mohamedrejeb.harfbuzz.core.paragraph.ParagraphAlignment
+import com.mohamedrejeb.harfbuzz.core.remapFontRuns
 import com.mohamedrejeb.harfbuzz.core.sliceFontRuns
+import kotlin.math.abs
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -111,6 +115,59 @@ class FontRunsParagraphTest {
             for ((a, b) in authored.lines.zip(again.lines)) {
                 assertSame(a.measured, b.measured, "line at ${a.charRange} should be a cache hit")
             }
+        }
+    }
+
+    @Test
+    fun `app-style per-line justification with remapped runs lands exact width`() = runBlocking {
+        harfBuzzInit()
+        clearMeasuredTextCacheForTest()
+        withFonts { noto, saudi ->
+            val paragraphText = "مرحبا بالعالم الواسع"
+            val paragraphRuns = listOf(FontRun(0, 5, saudi))
+            val stack = HbFontStack(noto)
+            // The caller slices a line out of its own plan:
+            val lineStart = 0
+            val lineEnd = paragraphText.length
+            val lineText = paragraphText.substring(lineStart, lineEnd)
+            val lineRuns = sliceFontRuns(paragraphRuns, lineStart, lineEnd)
+
+            val natural = buildMeasuredText(
+                lineText, stack, 32f, emptyList(), HbDirection.RTL, HbLanguage.AUTO, lineRuns,
+            )
+            val target = natural.advance + 90f
+
+            // The caller inserts connectors itself and re-shapes:
+            val kashidaWidth = buildMeasuredText(
+                "ـ", stack, 32f, emptyList(), HbDirection.RTL, HbLanguage.AUTO,
+            ).advance
+            val justified = LineJustifier.justify(
+                text = lineText,
+                strategy = JustificationStrategy.KashidaTo(target),
+                currentWidth = natural.advance,
+                targetWidth = target,
+                kashidaGlyphWidth = kashidaWidth,
+                thinSpaceWidth = 0f,
+            )
+            val remapped = justified.originalToJustifiedIndex?.let {
+                remapFontRuns(lineRuns, it, justified.justifiedText.length)
+            } ?: lineRuns
+            val reshaped = buildMeasuredText(
+                justified.justifiedText, stack, 32f, emptyList(), HbDirection.RTL, HbLanguage.AUTO, remapped,
+            )
+            // Exact landing via the geometric fine pass:
+            val filled = AdvanceStretchJustifier.fillToWidth(reshaped.paragraph, target)
+            assertTrue(
+                abs(filled.totalAdvance - target) <= 0.5f,
+                "advance=${filled.totalAdvance} target=$target",
+            )
+            // Connectors inside the authored range carry the authored font.
+            val tatweel = saudi.glyphIdForCodepoint(0x0640)
+            assertTrue(
+                reshaped.paragraph.runs.filter { it.font == saudi }
+                    .sumOf { r -> r.glyphs.count { it.glyphId == tatweel } } > 0,
+                "expected authored-font tatweels in the re-shaped line",
+            )
         }
     }
 
