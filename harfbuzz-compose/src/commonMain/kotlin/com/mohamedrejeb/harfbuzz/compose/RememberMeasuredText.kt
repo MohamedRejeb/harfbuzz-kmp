@@ -18,6 +18,7 @@ import com.mohamedrejeb.harfbuzz.core.RecordedPaintOp
 import com.mohamedrejeb.harfbuzz.core.ShapedParagraph
 import com.mohamedrejeb.harfbuzz.core.buildMeasured
 import com.mohamedrejeb.harfbuzz.core.defaultFlagsFor
+import com.mohamedrejeb.harfbuzz.core.remapFontRuns
 import com.mohamedrejeb.harfbuzz.core.paragraph.AdvanceStretchJustifier
 import com.mohamedrejeb.harfbuzz.core.paragraph.ArabicTextUtils
 import com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy
@@ -187,7 +188,7 @@ public suspend fun buildMeasuredTextWithJustify(
     // Project authored ranges into the justified text so the re-shape
     // keeps each range, connectors included, under its authored font.
     val justifiedFontRuns = justified.originalToJustifiedIndex?.let { m ->
-        remapFontRunsToJustified(fontRuns, m, text.length, justified.justifiedText.length)
+        remapFontRuns(fontRuns, m, justified.justifiedText.length)
     } ?: fontRuns
     val shaped = buildMeasuredText(
         justified.justifiedText, fontStack, sizePx, features, direction, language, justifiedFontRuns,
@@ -196,30 +197,6 @@ public suspend fun buildMeasuredTextWithJustify(
     return shaped.withOriginalMapping(originalTextLength = text.length, mapping = mapping)
 }
 
-/**
- * Project authored runs (original-text offsets) into the justified
- * text's coordinates so the re-shape after kashida or thin-space
- * insertion keeps each range, including connectors inserted inside it,
- * under its authored font. A connector inserted between original chars
- * `i` and `i + 1` lands with the run that contains `i` (it joins to
- * the previous letter).
- */
-private fun remapFontRunsToJustified(
-    fontRuns: List<FontRun>,
-    mapping: IntArray,
-    originalLength: Int,
-    justifiedLength: Int,
-): List<FontRun> {
-    if (fontRuns.isEmpty()) return fontRuns
-    return fontRuns.mapNotNull { run ->
-        val s = run.start.coerceIn(0, originalLength)
-        val e = run.end.coerceIn(0, originalLength)
-        if (e <= s) return@mapNotNull null
-        val js = mapping[s]
-        val je = if (e >= originalLength) justifiedLength else mapping[e]
-        if (je <= js) null else FontRun(js, je, run.font)
-    }
-}
 
 /**
  * Justify [text] to fill EXACTLY [targetWidthPx], never exceeding it — the
