@@ -3,8 +3,10 @@ package com.mohamedrejeb.harfbuzz.compose.paragraph
 import com.mohamedrejeb.harfbuzz.compose.TestFonts
 import com.mohamedrejeb.harfbuzz.compose.buildMeasuredText
 import com.mohamedrejeb.harfbuzz.compose.buildMeasuredTextJustified
+import com.mohamedrejeb.harfbuzz.core.FontRun
 import com.mohamedrejeb.harfbuzz.core.HbDirection
 import com.mohamedrejeb.harfbuzz.core.HbFace
+import com.mohamedrejeb.harfbuzz.core.HbFont
 import com.mohamedrejeb.harfbuzz.core.HbFontStack
 import com.mohamedrejeb.harfbuzz.core.HbLanguage
 import com.mohamedrejeb.harfbuzz.core.harfBuzzInit
@@ -87,6 +89,50 @@ class BuildMeasuredTextJustifiedTest {
         assertTrue(shortJustified.advance <= target + EPS, "short must not exceed long: ${shortJustified.advance} vs $target")
         assertTrue(abs(shortJustified.advance - target) <= EPS, "short should match long: ${shortJustified.advance} vs $target")
     }
+
+    @Test
+    fun `arabic line with authored run lands exactly on target width`() = runBlocking {
+        val s = stack(TestFonts.notoNaskhArabicMedium())
+        val saudi = font(TestFonts.saudiRegular())
+        val runs = listOf(FontRun(0, 5, saudi))
+        val target = naturalWithRuns(ARABIC, s, HbDirection.RTL, runs).advance + 100f
+        val out = justifiedWithRuns(ARABIC, s, HbDirection.RTL, target, runs)
+        assertTrue(out.advance <= target + EPS, "must not exceed: advance=${out.advance} target=$target")
+        assertTrue(abs(out.advance - target) <= EPS, "must reach target: advance=${out.advance} target=$target")
+    }
+
+    @Test
+    fun `mixed latin arabic line with authored run lands exactly on target width`() = runBlocking {
+        val s = stack(TestFonts.robotoRegular())
+        val noto = font(TestFonts.notoNaskhArabicMedium())
+        val mixed = "Hello مرحبا World"
+        val arabicStart = mixed.indexOf('م')
+        val runs = listOf(FontRun(arabicStart, arabicStart + 5, noto))
+        val target = naturalWithRuns(mixed, s, HbDirection.AUTO, runs).advance + 80f
+        val out = justifiedWithRuns(mixed, s, HbDirection.AUTO, target, runs)
+        assertTrue(out.advance <= target + EPS, "must not exceed: advance=${out.advance} target=$target")
+        assertTrue(abs(out.advance - target) <= EPS, "must reach target: advance=${out.advance} target=$target")
+    }
+
+    private suspend fun font(bytes: ByteArray): HbFont {
+        harfBuzzInit()
+        val face = HbFace.fromBytes(bytes)
+        val f = face.toFont()
+        handles.add(f)
+        handles.add(face)
+        return f
+    }
+
+    private suspend fun naturalWithRuns(text: String, s: HbFontStack, dir: HbDirection, runs: List<FontRun>) =
+        buildMeasuredText(text, s, SIZE, emptyList(), dir, HbLanguage.AUTO, runs)
+
+    private suspend fun justifiedWithRuns(
+        text: String,
+        s: HbFontStack,
+        dir: HbDirection,
+        target: Float,
+        runs: List<FontRun>,
+    ) = buildMeasuredTextJustified(text, s, SIZE, emptyList(), dir, HbLanguage.AUTO, target, runs)
 
     private companion object {
         const val SIZE = 28f

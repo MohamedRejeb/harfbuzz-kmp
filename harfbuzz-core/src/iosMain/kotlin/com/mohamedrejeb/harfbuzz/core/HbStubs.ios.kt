@@ -665,6 +665,34 @@ public actual class HbBuffer actual constructor() : AutoCloseable {
             }
         }
 
+    public actual fun setTextWithContext(contextText: String, itemOffset: Int, itemLength: Int) {
+        throwIfDisposed(closed)
+        if (itemOffset < 0 || itemLength < 0 || itemOffset + itemLength > contextText.length) return
+        hb_buffer_clear_contents(handle.reinterpret())
+        if (contextText.isNotEmpty()) {
+            contextText.toCharArray().usePinned { pinned ->
+                hb_buffer_add_utf16(
+                    handle.reinterpret(),
+                    pinned.addressOf(0).reinterpret(),
+                    contextText.length,
+                    itemOffset.toUInt(),
+                    itemLength,
+                )
+            }
+        }
+        hb_buffer_set_direction(handle.reinterpret(), _direction.toNativeIos().convert())
+        hb_buffer_set_script(
+            handle.reinterpret(),
+            hb_script_from_iso15924_tag(_script.tag.raw),
+        )
+        if (_language != HbLanguage.AUTO) {
+            hb_buffer_set_language(
+                handle.reinterpret(),
+                hb_language_from_string(_language.bcp47, -1),
+            )
+        }
+    }
+
     private var _direction: HbDirection = HbDirection.AUTO
     public actual var direction: HbDirection
         get() = _direction

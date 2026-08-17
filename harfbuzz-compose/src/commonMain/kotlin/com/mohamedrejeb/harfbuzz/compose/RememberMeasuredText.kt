@@ -7,6 +7,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Path
 import com.mohamedrejeb.harfbuzz.core.ColorLayer
+import com.mohamedrejeb.harfbuzz.core.FontRun
 import com.mohamedrejeb.harfbuzz.core.HbDirection
 import com.mohamedrejeb.harfbuzz.core.HbFeature
 import com.mohamedrejeb.harfbuzz.core.HbFont
@@ -14,6 +15,7 @@ import com.mohamedrejeb.harfbuzz.core.HbFontStack
 import com.mohamedrejeb.harfbuzz.core.HbLanguage
 import com.mohamedrejeb.harfbuzz.core.MeasuredFontPass
 import com.mohamedrejeb.harfbuzz.core.RecordedPaintOp
+import com.mohamedrejeb.harfbuzz.core.ShapedParagraph
 import com.mohamedrejeb.harfbuzz.core.buildMeasured
 import com.mohamedrejeb.harfbuzz.core.defaultFlagsFor
 import com.mohamedrejeb.harfbuzz.core.paragraph.AdvanceStretchJustifier
@@ -52,9 +54,10 @@ public fun rememberMeasuredText(
     language: HbLanguage = HbLanguage.AUTO,
     maxWidth: Float = Float.POSITIVE_INFINITY,
     justification: JustificationStrategy = JustificationStrategy.None,
+    fontRuns: List<FontRun> = emptyList(),
 ): State<MeasuredTextLoad> {
     val stack = remember(font) { HbFontStack(font) }
-    return rememberMeasuredText(text, stack, sizePx, features, direction, language, maxWidth, justification)
+    return rememberMeasuredText(text, stack, sizePx, features, direction, language, maxWidth, justification, fontRuns)
 }
 
 /**
@@ -69,6 +72,12 @@ public fun rememberMeasuredText(
  * with extra Kashida / thin-space glyphs (see [LineJustifier]). When
  * the original advance already meets or exceeds [maxWidth] the input is
  * returned as-is.
+ *
+ * [fontRuns] carries authored font assignments over ranges of [text]
+ * (original-text UTF-16 offsets; clamp and last-wins semantics, see
+ * [com.mohamedrejeb.harfbuzz.core.shapeParagraph]). The caller retains
+ * ownership of the fonts and must keep them alive while the returned
+ * state is in use, same as [fontStack]'s fonts.
  */
 @Composable
 public fun rememberMeasuredText(
@@ -80,17 +89,18 @@ public fun rememberMeasuredText(
     language: HbLanguage = HbLanguage.AUTO,
     maxWidth: Float = Float.POSITIVE_INFINITY,
     justification: JustificationStrategy = JustificationStrategy.None,
+    fontRuns: List<FontRun> = emptyList(),
 ): State<MeasuredTextLoad> {
     return produceState<MeasuredTextLoad>(
         initialValue = MeasuredTextLoad.Loading,
-        text, fontStack, sizePx, features, direction, language, maxWidth, justification,
+        text, fontStack, sizePx, features, direction, language, maxWidth, justification, fontRuns,
     ) {
         // Deliberately do NOT reset to Loading here: keep the previous
         // Ready value visible while the new build runs so size /
         // feature / justification animation does not blank the text.
         try {
             val measured = buildMeasuredTextWithJustify(
-                text, fontStack, sizePx, features, direction, language, maxWidth, justification,
+                text, fontStack, sizePx, features, direction, language, maxWidth, justification, fontRuns,
             )
             value = MeasuredTextLoad.Ready(measured)
         } catch (ce: CancellationException) {
@@ -132,8 +142,9 @@ public suspend fun buildMeasuredTextWithJustify(
     language: HbLanguage,
     maxWidth: Float,
     justification: JustificationStrategy,
+    fontRuns: List<FontRun> = emptyList(),
 ): MeasuredText {
-    val initial = buildMeasuredText(text, fontStack, sizePx, features, direction, language)
+    val initial = buildMeasuredText(text, fontStack, sizePx, features, direction, language, fontRuns)
     val targetWidth = when (justification) {
         is JustificationStrategy.KashidaTo -> justification.targetWidthPx
         is JustificationStrategy.AdvanceStretchTo -> justification.targetWidthPx
@@ -173,11 +184,41 @@ public suspend fun buildMeasuredTextWithJustify(
         thinSpaceWidth = thinSpaceWidth,
     )
     if (justified.justifiedText.length == text.length) return initial
+    // Project authored ranges into the justified text so the re-shape
+    // keeps each range, connectors included, under its authored font.
+    val justifiedFontRuns = justified.originalToJustifiedIndex?.let { m ->
+        remapFontRunsToJustified(fontRuns, m, text.length, justified.justifiedText.length)
+    } ?: fontRuns
     val shaped = buildMeasuredText(
-        justified.justifiedText, fontStack, sizePx, features, direction, language,
+        justified.justifiedText, fontStack, sizePx, features, direction, language, justifiedFontRuns,
     )
     val mapping = justified.originalToJustifiedIndex ?: return shaped
     return shaped.withOriginalMapping(originalTextLength = text.length, mapping = mapping)
+}
+
+/**
+ * Project authored runs (original-text offsets) into the justified
+ * text's coordinates so the re-shape after kashida or thin-space
+ * insertion keeps each range, including connectors inserted inside it,
+ * under its authored font. A connector inserted between original chars
+ * `i` and `i + 1` lands with the run that contains `i` (it joins to
+ * the previous letter).
+ */
+private fun remapFontRunsToJustified(
+    fontRuns: List<FontRun>,
+    mapping: IntArray,
+    originalLength: Int,
+    justifiedLength: Int,
+): List<FontRun> {
+    if (fontRuns.isEmpty()) return fontRuns
+    return fontRuns.mapNotNull { run ->
+        val s = run.start.coerceIn(0, originalLength)
+        val e = run.end.coerceIn(0, originalLength)
+        if (e <= s) return@mapNotNull null
+        val js = mapping[s]
+        val je = if (e >= originalLength) justifiedLength else mapping[e]
+        if (je <= js) null else FontRun(js, je, run.font)
+    }
 }
 
 /**
@@ -201,6 +242,11 @@ public suspend fun buildMeasuredTextWithJustify(
  *
  * Returns the natural shape unchanged when [text] is empty, [targetWidthPx] is
  * non-finite / non-positive, or the natural advance already meets the target.
+ *
+ * With [fontRuns], the coarse Kashida count is still estimated from a
+ * single stack-shaped tatweel; per-range tatweel widths can differ, but
+ * the geometric fine pass closes the residual, so the exact-width
+ * guarantee holds on mixed-font lines too.
  */
 public suspend fun buildMeasuredTextJustified(
     text: String,
@@ -210,8 +256,9 @@ public suspend fun buildMeasuredTextJustified(
     direction: HbDirection,
     language: HbLanguage,
     targetWidthPx: Float,
+    fontRuns: List<FontRun> = emptyList(),
 ): MeasuredText {
-    val natural = buildMeasuredText(text, fontStack, sizePx, features, direction, language)
+    val natural = buildMeasuredText(text, fontStack, sizePx, features, direction, language, fontRuns)
     if (
         text.isEmpty() ||
         !targetWidthPx.isFinite() ||
@@ -232,6 +279,7 @@ public suspend fun buildMeasuredTextJustified(
             language = language,
             maxWidth = targetWidthPx,
             justification = JustificationStrategy.KashidaTo(targetWidthPx),
+            fontRuns = fontRuns,
         )
         // Guard against a font whose in-context Kashida runs wider than the
         // standalone estimate (would push past target): fall back to natural,
@@ -275,6 +323,14 @@ private fun wordGapGlyphIndices(measured: MeasuredText, text: String): IntArray?
 private fun isStaleHbHandle(cause: Throwable): Boolean =
     cause is IllegalStateException && cause.message == "hb object disposed"
 
+/**
+ * @param fontRuns Authored font assignments over ranges of [text]; see
+ *   [com.mohamedrejeb.harfbuzz.core.shapeParagraph]. Part of the cache
+ *   key, so shapes with and without authored runs never collide. The
+ *   caller retains ownership of the fonts and must keep them alive for
+ *   as long as the returned [MeasuredText] is in use, same as the
+ *   stack fonts.
+ */
 public suspend fun buildMeasuredText(
     text: String,
     fontStack: HbFontStack,
@@ -282,6 +338,7 @@ public suspend fun buildMeasuredText(
     features: List<HbFeature>,
     direction: HbDirection,
     language: HbLanguage,
+    fontRuns: List<FontRun> = emptyList(),
 ): MeasuredText {
     // Bucket the requested size to [SIZE_PX_BUCKET_PX] before keying the
     // cache and before passing it down to the shaper. Slider scrubs that
@@ -296,9 +353,9 @@ public suspend fun buildMeasuredText(
     // intentionally excludes paint-only props (color, alpha, shadow) so
     // animating them never invalidates the entry. See [MeasuredTextCache]
     // for the workloads this catches.
-    val cacheKey = measureKeyOf(text, fontStack, bucketedSizePx, features, direction, language)
+    val cacheKey = measureKeyOf(text, fontStack, bucketedSizePx, features, direction, language, fontRuns)
     MeasuredTextCache.get(cacheKey)?.let { return it }
-    val measured = buildMeasuredTextUncached(text, fontStack, bucketedSizePx, features, direction, language)
+    val measured = buildMeasuredTextUncached(text, fontStack, bucketedSizePx, features, direction, language, fontRuns)
     // Empty-text builds skip the cache: there's nothing to amortise and an
     // empty entry per (fontStack, features, ...) tuple would just pollute
     // the working set.
@@ -313,8 +370,37 @@ private suspend fun buildMeasuredTextUncached(
     features: List<HbFeature>,
     direction: HbDirection,
     language: HbLanguage,
+    fontRuns: List<FontRun> = emptyList(),
 ): MeasuredText = runShapingWork {
-    if (text.isEmpty()) return@runShapingWork MeasuredText.empty(fontStack.primary, sizePx)
+    if (text.isEmpty()) {
+        // Zero geometry, but real vertical metrics: callers planning line
+        // boxes rely on the ascent/descent slots even for empty lines.
+        val ext = runCatching { fontStack.primary.hExtents(sizePx) }.getOrNull()
+        val emptyAscent = ext?.ascender ?: (sizePx * 0.8f)
+        val emptyDescent = ext?.let { -it.descender } ?: (sizePx * 0.2f)
+        val emptyLineGap = ext?.lineGap ?: 0f
+        return@runShapingWork MeasuredText(
+            paragraph = ShapedParagraph.EMPTY,
+            fontStack = fontStack,
+            sizePx = sizePx,
+            ink = Rect.Zero,
+            logical = Rect(0f, -emptyAscent, 0f, emptyDescent + emptyLineGap),
+            baseline = emptyAscent,
+            advance = 0f,
+            ascent = emptyAscent,
+            descent = emptyDescent,
+            lineGap = emptyLineGap,
+            textLength = 0,
+            flippedPathsByFont = emptyMap(),
+            rawPathsByFont = emptyMap(),
+            colorLayersByFont = emptyMap(),
+            paintTreesByFont = emptyMap(),
+            svgGlyphCachesByFont = emptyMap(),
+            hasColorGlyphs = false,
+            hasColorPaintTree = false,
+            hasColorSvg = false,
+        )
+    }
 
     val perFontFlags = fontStack.fonts.map { defaultFlagsFor(it) }
     val pass = fontStack.buildMeasured(
@@ -324,6 +410,7 @@ private suspend fun buildMeasuredTextUncached(
         features = features,
         language = language,
         perFontFlags = perFontFlags,
+        fontRuns = fontRuns,
     )
 
     val flippedPathsByFont = HashMap<HbFont, Map<Int, Path>>()
@@ -369,6 +456,23 @@ private suspend fun buildMeasuredTextUncached(
     val lineGap = ext?.lineGap ?: 0f
     val baseline = ascent
 
+    // Effective line metrics: max across the base font and every font
+    // that contributed a glyph run. hExtents is one dispatcher hop per
+    // extra font; contributing sets are tiny in practice.
+    var maxAscent = ascent
+    var maxDescent = descent
+    var maxLineGap = lineGap
+    val contributing = LinkedHashSet<HbFont>().apply {
+        for (run in pass.paragraph.runs) run.font?.let { add(it) }
+        remove(fontStack.primary)
+    }
+    for (f in contributing) {
+        val fx = runCatching { f.hExtents(sizePx) }.getOrNull() ?: continue
+        maxAscent = maxOf(maxAscent, fx.ascender)
+        maxDescent = maxOf(maxDescent, -fx.descender)
+        maxLineGap = maxOf(maxLineGap, fx.lineGap)
+    }
+
     val ink = if (pass.paragraph.ink.isEmpty) Rect.Zero
     else Rect(pass.paragraph.ink.left, pass.paragraph.ink.top, pass.paragraph.ink.right, pass.paragraph.ink.bottom)
     val logical = Rect(0f, -ascent, advance, descent + lineGap)
@@ -384,6 +488,9 @@ private suspend fun buildMeasuredTextUncached(
         ascent = ascent,
         descent = descent,
         lineGap = lineGap,
+        maxAscent = maxAscent,
+        maxDescent = maxDescent,
+        maxLineGap = maxLineGap,
         textLength = text.length,
         flippedPathsByFont = flippedPathsByFont,
         rawPathsByFont = rawPathsByFont,

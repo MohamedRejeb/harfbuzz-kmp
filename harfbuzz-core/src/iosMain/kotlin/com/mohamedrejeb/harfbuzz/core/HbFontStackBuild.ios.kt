@@ -13,6 +13,7 @@ internal actual suspend fun HbFontStack.tryBuildMeasuredFastPath(
     features: List<HbFeature>,
     language: HbLanguage,
     perFontFlags: List<GlyphSnapshotFlags>,
+    fontRuns: List<FontRun>,
 ): MeasuredPass? = null
 
 /** iOS: cinterop returns whole SVG documents; the Compose layer's slicer still runs. */

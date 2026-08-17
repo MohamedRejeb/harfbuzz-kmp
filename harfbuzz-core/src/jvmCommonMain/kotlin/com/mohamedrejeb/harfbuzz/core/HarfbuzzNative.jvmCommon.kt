@@ -115,6 +115,12 @@ internal object HarfbuzzNative {
     @JvmStatic external fun bufferDestroy(bufferPtr: Long)
     @JvmStatic external fun bufferReset(bufferPtr: Long)
     @JvmStatic external fun bufferSetText(bufferPtr: Long, text: String)
+    @JvmStatic external fun bufferSetTextWithContext(
+        bufferPtr: Long,
+        text: String,
+        itemOffset: Int,
+        itemLength: Int,
+    )
     @JvmStatic external fun bufferSetDirection(bufferPtr: Long, direction: Int)
     @JvmStatic external fun bufferSetScript(bufferPtr: Long, scriptTag: Int)
     @JvmStatic external fun bufferSetLanguage(bufferPtr: Long, bcp47: String?)

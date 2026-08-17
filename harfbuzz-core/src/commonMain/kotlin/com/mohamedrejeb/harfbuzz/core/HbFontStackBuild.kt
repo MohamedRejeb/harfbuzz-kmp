@@ -31,6 +31,10 @@ import com.mohamedrejeb.harfbuzz.core.RecordedPaintOp.PushClipGlyph
  *   paint table contributes paint-tree bytes, any face with an `SVG `
  *   table contributes SVG fragments, etc. Passing a custom list lets a
  *   caller skip work it doesn't need (e.g. monochrome-only renderer).
+ * @param fontRuns Authored font assignments over ranges of [text]; see
+ *   [shapeParagraph]. Authored fonts outside [HbFontStack.fonts] get
+ *   their glyph caches collected with [defaultFlagsFor], the same
+ *   escape hatch system-fallback fonts use.
  */
 public suspend fun HbFontStack.buildMeasured(
     text: String,
@@ -39,6 +43,7 @@ public suspend fun HbFontStack.buildMeasured(
     features: List<HbFeature> = emptyList(),
     language: HbLanguage = HbLanguage.AUTO,
     perFontFlags: List<GlyphSnapshotFlags> = fonts.map { defaultFlagsFor(it) },
+    fontRuns: List<FontRun> = emptyList(),
 ): MeasuredPass {
     require(perFontFlags.size == fonts.size) {
         "perFontFlags must have ${fonts.size} entries (one per font in stack), got ${perFontFlags.size}"
@@ -49,9 +54,10 @@ public suspend fun HbFontStack.buildMeasured(
             fontPasses = emptyList(),
         )
     }
-    tryBuildMeasuredFastPath(text, sizePx, baseDirection, features, language, perFontFlags)?.let { return it }
+    tryBuildMeasuredFastPath(text, sizePx, baseDirection, features, language, perFontFlags, fontRuns)
+        ?.let { return it }
 
-    val paragraph = shapeParagraph(text, sizePx, baseDirection, features, language)
+    val paragraph = shapeParagraph(text, sizePx, baseDirection, features, language, fontRuns)
     return MeasuredPass(
         paragraph = paragraph,
         fontPasses = collectFontPassesViaSnapshot(paragraph, sizePx, perFontFlags),
@@ -125,6 +131,7 @@ internal expect suspend fun HbFontStack.tryBuildMeasuredFastPath(
     features: List<HbFeature>,
     language: HbLanguage,
     perFontFlags: List<GlyphSnapshotFlags>,
+    fontRuns: List<FontRun>,
 ): MeasuredPass?
 
 /**
