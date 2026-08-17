@@ -6,19 +6,24 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import com.mohamedrejeb.harfbuzz.compose.MeasuredText
 import com.mohamedrejeb.harfbuzz.compose.buildMeasuredText
-import com.mohamedrejeb.harfbuzz.compose.buildMeasuredTextWithJustify
 import com.mohamedrejeb.harfbuzz.compose.withLetterSpacing
+import com.mohamedrejeb.harfbuzz.core.FontRun
 import com.mohamedrejeb.harfbuzz.core.HbDirection
 import com.mohamedrejeb.harfbuzz.core.HbFeature
 import com.mohamedrejeb.harfbuzz.core.HbFont
 import com.mohamedrejeb.harfbuzz.core.HbFontStack
 import com.mohamedrejeb.harfbuzz.core.HbLanguage
+import com.mohamedrejeb.harfbuzz.core.remapFontRuns
+import com.mohamedrejeb.harfbuzz.core.sliceFontRuns
 import com.mohamedrejeb.harfbuzz.core.paragraph.ArabicTextUtils
 import com.mohamedrejeb.harfbuzz.core.paragraph.JustificationStrategy
 import com.mohamedrejeb.harfbuzz.core.paragraph.LaidOutParagraph
+import com.mohamedrejeb.harfbuzz.core.paragraph.LineJustifier
 import com.mohamedrejeb.harfbuzz.core.paragraph.ParagraphAlignment
 import com.mohamedrejeb.harfbuzz.core.paragraph.WordBreak
+import com.mohamedrejeb.harfbuzz.core.paragraph.WordSpacingJustifier
 import com.mohamedrejeb.harfbuzz.core.paragraph.layoutParagraph
+import com.mohamedrejeb.harfbuzz.core.shapeParagraph
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -47,6 +52,7 @@ public fun rememberMeasuredParagraph(
     justification: JustificationStrategy = JustificationStrategy.None,
     wordBreak: WordBreak = WordBreak.Phrase,
     letterSpacing: Float = 0f,
+    fontRuns: List<FontRun> = emptyList(),
 ): State<MeasuredParagraphLoad> {
     val stack = remember(font) { HbFontStack(font) }
     return rememberMeasuredParagraph(
@@ -62,6 +68,7 @@ public fun rememberMeasuredParagraph(
         justification = justification,
         wordBreak = wordBreak,
         letterSpacing = letterSpacing,
+        fontRuns = fontRuns,
     )
 }
 
@@ -85,11 +92,12 @@ public fun rememberMeasuredParagraph(
     justification: JustificationStrategy = JustificationStrategy.None,
     wordBreak: WordBreak = WordBreak.Phrase,
     letterSpacing: Float = 0f,
+    fontRuns: List<FontRun> = emptyList(),
 ): State<MeasuredParagraphLoad> {
     return produceState<MeasuredParagraphLoad>(
         initialValue = MeasuredParagraphLoad.Loading,
         text, fontStack, sizePx, maxWidth, alignment, direction,
-        features, language, lineSpacing, justification, wordBreak, letterSpacing,
+        features, language, lineSpacing, justification, wordBreak, letterSpacing, fontRuns,
     ) {
         // Deliberately do NOT reset to Loading here: keep the previous
         // Ready value visible while the new layout runs so size /
@@ -108,6 +116,7 @@ public fun rememberMeasuredParagraph(
                 justification = justification,
                 wordBreak = wordBreak,
                 letterSpacing = letterSpacing,
+                fontRuns = fontRuns,
             )
             value = MeasuredParagraphLoad.Ready(measured)
         } catch (ce: CancellationException) {
@@ -126,6 +135,17 @@ public fun rememberMeasuredParagraph(
 private fun isStaleHbHandle(cause: Throwable): Boolean =
     cause is IllegalStateException && cause.message == "hb object disposed"
 
+/**
+ * @param fontRuns Authored font assignments over ranges of [text]
+ *   (paragraph-text UTF-16 offsets; clamp and last-wins semantics).
+ *   Line breaking measures candidates with the runs applied, and each
+ *   line's [MeasuredText] is shaped with the runs sliced to its range
+ *   (via [sliceFontRuns], projected through [remapFontRuns] on
+ *   justified lines), so per-line glyph caches, cache keys, and
+ *   effective metrics ([MeasuredText.maxAscent] / `maxDescent`) all
+ *   reflect the mixed fonts. Line stepping keeps using the primary
+ *   font's metrics. The caller retains ownership of the fonts.
+ */
 public suspend fun buildMeasuredParagraph(
     text: String,
     fontStack: HbFontStack,
@@ -139,6 +159,7 @@ public suspend fun buildMeasuredParagraph(
     justification: JustificationStrategy,
     wordBreak: WordBreak = WordBreak.Phrase,
     letterSpacing: Float = 0f,
+    fontRuns: List<FontRun> = emptyList(),
 ): MeasuredParagraph {
     if (text.isEmpty() || maxWidth <= 0f) return MeasuredParagraph.empty(fontStack)
 
@@ -154,9 +175,22 @@ public suspend fun buildMeasuredParagraph(
         justification = justification,
         wordBreak = wordBreak,
         letterSpacing = letterSpacing,
+        fontRuns = fontRuns,
     )
 
     val lines = layout.lines.map { line ->
+        // Slice the paragraph's authored runs to this line's range, in
+        // line-local coordinates; justified lines project the slice
+        // through the connector-insertion mapping so the re-measure
+        // shapes the same glyphs the layout produced.
+        val lineRuns = if (fontRuns.isEmpty()) {
+            emptyList()
+        } else {
+            val sliced = sliceFontRuns(fontRuns, line.charRange.first, line.charRange.last + 1)
+            line.originalToJustifiedIndex?.let { m ->
+                remapFontRuns(sliced, m, line.text.length)
+            } ?: sliced
+        }
         // Re-shape per line through the same per-glyph-cache pipeline that
         // `buildMeasuredText` populates for `drawShapedText`. The shaped
         // text comes straight from the line's `paragraph` (already
@@ -164,7 +198,7 @@ public suspend fun buildMeasuredParagraph(
         // between layout and render. Letter spacing is baked in here so the
         // rendered glyphs match the letter-spaced advances `layoutParagraph`
         // already used for line breaking and geometry.
-        val measured = measureParagraphLine(
+        val shape = measureParagraphLine(
             lineText = line.text,
             fontStack = fontStack,
             sizePx = sizePx,
@@ -175,18 +209,36 @@ public suspend fun buildMeasuredParagraph(
             language = language,
             letterSpacing = letterSpacing,
             targetAdvance = line.advance,
+            fontRuns = lineRuns,
         )
+        val measured = shape.measured
+        // Letter spacing on Arabic widens the line by inserting Kashida
+        // connectors; surface the widened text and mapping on the line,
+        // exactly like the justification path, so the measured shape's
+        // cluster ids, span slicing, and char accessors all agree on one
+        // text space.
+        val lineWithShapedText = if (shape.insertionMapping != null) {
+            line.copy(
+                text = shape.shapedText,
+                originalToJustifiedIndex = composeInsertionMappings(
+                    line.originalToJustifiedIndex,
+                    shape.insertionMapping,
+                ),
+            )
+        } else {
+            line
+        }
         // Re-derive the alignment offset from the ACTUAL measured ink. Core's
         // `layoutParagraph` computed `xOffset` from the advance-stretch
         // geometry, which matches the render for Latin but diverges for Arabic
         // (rendered as Kashida). Aligning to the rendered ink keeps every line
         // on the same edge. Zero spacing keeps core's offset untouched.
         val resolvedLine = if (letterSpacing != 0f && !measured.isEmpty) {
-            line.copy(
+            lineWithShapedText.copy(
                 xOffset = alignedXOffset(measured, layout.maxWidth, layout.alignment, line.paragraph.baseDirection),
             )
         } else {
-            line
+            lineWithShapedText
         }
         MeasuredLine(measured = measured, layout = resolvedLine)
     }
@@ -204,17 +256,6 @@ public suspend fun buildMeasuredParagraph(
     )
 }
 
-/**
- * Shape one paragraph line with [letterSpacing] baked in to match the
- * letter-spaced advance ([targetAdvance]) `layoutParagraph` already used for
- * line breaking and geometry:
- *
- *  - `0` spacing → plain shape.
- *  - Positive spacing on Arabic content → Kashida (tatweel) elongation up to
- *    [targetAdvance], so cursive joins stretch instead of opening gaps.
- *  - Otherwise (Latin / mixed tracking, or any negative spacing) → uniform
- *    per-cluster advance delta via [withLetterSpacing].
- */
 /**
  * Per-line alignment offset derived from the rendered [measured] ink — the
  * Compose-side mirror of `ParagraphLayout.computeXOffset`, used to re-align a
@@ -240,6 +281,21 @@ private fun alignedXOffset(
     }
 }
 
+/**
+ * Per-line measure result: the shaped [measured] plus the text its
+ * cluster ids address and, when positive letter spacing widened an
+ * Arabic line by inserting Kashida connectors, the source-to-widened
+ * index mapping. Non-null [insertionMapping] means [shapedText] differs
+ * from the source line and must replace [LineLayout.text] with the
+ * mapping composed onto [LineLayout.originalToJustifiedIndex], the same
+ * bookkeeping core justification uses.
+ */
+private class MeasuredLineShape(
+    val measured: MeasuredText,
+    val shapedText: String,
+    val insertionMapping: IntArray?,
+)
+
 private suspend fun measureParagraphLine(
     lineText: String,
     fontStack: HbFontStack,
@@ -249,23 +305,84 @@ private suspend fun measureParagraphLine(
     language: HbLanguage,
     letterSpacing: Float,
     targetAdvance: Float,
-): MeasuredText {
+    fontRuns: List<FontRun> = emptyList(),
+): MeasuredLineShape {
     if (letterSpacing == 0f) {
-        return buildMeasuredText(lineText, fontStack, sizePx, features, direction, language)
-    }
-    if (letterSpacing > 0f && ArabicTextUtils.isArabicText(lineText)) {
-        return buildMeasuredTextWithJustify(
-            text = lineText,
-            fontStack = fontStack,
-            sizePx = sizePx,
-            features = features,
-            direction = direction,
-            language = language,
-            maxWidth = targetAdvance,
-            justification = JustificationStrategy.KashidaTo(targetAdvance),
+        return MeasuredLineShape(
+            measured = buildMeasuredText(lineText, fontStack, sizePx, features, direction, language, fontRuns),
+            shapedText = lineText,
+            insertionMapping = null,
         )
     }
-    return buildMeasuredText(lineText, fontStack, sizePx, features, direction, language)
-        .withLetterSpacing(letterSpacing)
+    if (letterSpacing > 0f && ArabicTextUtils.isArabicText(lineText)) {
+        return measureKashidaSpacedLine(
+            lineText, fontStack, sizePx, features, direction, language, targetAdvance, fontRuns,
+        )
+    }
+    return MeasuredLineShape(
+        measured = buildMeasuredText(lineText, fontStack, sizePx, features, direction, language, fontRuns)
+            .withLetterSpacing(letterSpacing),
+        shapedText = lineText,
+        insertionMapping = null,
+    )
 }
+
+/**
+ * Positive letter spacing on Arabic content elongates via Kashida up to
+ * [targetAdvance] (the letter-spaced advance the layout already used),
+ * so cursive joins stretch instead of opening gaps. The widened text is
+ * shaped directly, so the returned measured's cluster ids and
+ * [MeasuredText.textLength] both live in the widened text's space; the
+ * caller surfaces [MeasuredLineShape.shapedText] and the insertion
+ * mapping on the line.
+ */
+private suspend fun measureKashidaSpacedLine(
+    lineText: String,
+    fontStack: HbFontStack,
+    sizePx: Float,
+    features: List<HbFeature>,
+    direction: HbDirection,
+    language: HbLanguage,
+    targetAdvance: Float,
+    fontRuns: List<FontRun>,
+): MeasuredLineShape {
+    val initial = buildMeasuredText(lineText, fontStack, sizePx, features, direction, language, fontRuns)
+    if (
+        lineText.isEmpty() ||
+        !targetAdvance.isFinite() ||
+        targetAdvance <= 0f ||
+        initial.advance >= targetAdvance
+    ) {
+        return MeasuredLineShape(initial, lineText, null)
+    }
+    val kashidaWidth = fontStack.shapeParagraph(
+        ArabicTextUtils.KASHIDA.toString(), sizePx, direction, features, language,
+    ).totalAdvance
+    val thinSpaceWidth = fontStack.shapeParagraph(
+        WordSpacingJustifier.THIN_SPACE.toString(), sizePx, direction, features, language,
+    ).totalAdvance
+    val justified = LineJustifier.justify(
+        text = lineText,
+        strategy = JustificationStrategy.KashidaTo(targetAdvance),
+        currentWidth = initial.advance,
+        targetWidth = targetAdvance,
+        kashidaGlyphWidth = kashidaWidth,
+        thinSpaceWidth = thinSpaceWidth,
+    )
+    val mapping = justified.originalToJustifiedIndex
+        ?: return MeasuredLineShape(initial, lineText, null)
+    val widenedRuns = remapFontRuns(fontRuns, mapping, justified.justifiedText.length)
+    val measured = buildMeasuredText(
+        justified.justifiedText, fontStack, sizePx, features, direction, language, widenedRuns,
+    )
+    return MeasuredLineShape(measured, justified.justifiedText, mapping)
+}
+
+/**
+ * Compose a core-justification mapping with a later letter-spacing
+ * insertion mapping: entry `i` of the trimmed source line maps first
+ * into the justified text, then into the connector-widened text.
+ */
+private fun composeInsertionMappings(first: IntArray?, second: IntArray): IntArray =
+    if (first == null) second else IntArray(first.size) { second[first[it]] }
 
