@@ -1,12 +1,16 @@
 package com.mohamedrejeb.harfbuzz.core.paragraph
 
+import com.mohamedrejeb.harfbuzz.core.FontRun
 import com.mohamedrejeb.harfbuzz.core.HbDirection
 import com.mohamedrejeb.harfbuzz.core.HbFeature
 import com.mohamedrejeb.harfbuzz.core.HbFontStack
 import com.mohamedrejeb.harfbuzz.core.HbLanguage
 import com.mohamedrejeb.harfbuzz.core.HbRect
 import com.mohamedrejeb.harfbuzz.core.ShapedParagraph
+import com.mohamedrejeb.harfbuzz.core.normalizeFontRuns
+import com.mohamedrejeb.harfbuzz.core.remapFontRuns
 import com.mohamedrejeb.harfbuzz.core.shapeParagraph
+import com.mohamedrejeb.harfbuzz.core.sliceNormalizedFontRuns
 
 /**
  * Lay out [text] across multiple visual lines under a [maxWidth]
@@ -41,6 +45,16 @@ import com.mohamedrejeb.harfbuzz.core.shapeParagraph
  * [WordBreak.AnyChar] shapes once per line up to a hard break or a
  * bounded character cap, then bisects in O(graphemes-per-line); 1-2
  * shapes per line vs. one-per-grapheme greedy.
+ *
+ * @param fontRuns Authored font assignments over ranges of [text]
+ *   (paragraph-text UTF-16 offsets; clamp and last-wins semantics, see
+ *   [shapeParagraph]). Line-break candidates are shaped with the runs
+ *   sliced to their range, so per-run advances drive the greedy fit
+ *   and the grapheme bisect; break-opportunity computation itself is
+ *   unchanged. Each output line's shape carries the runs sliced (and,
+ *   for justified lines, remapped through the connector insertions) to
+ *   its own text. Line stepping still uses the primary font's metrics;
+ *   per-line effective metrics come from each line's measured shape.
  */
 public suspend fun HbFontStack.layoutParagraph(
     text: String,
@@ -54,6 +68,7 @@ public suspend fun HbFontStack.layoutParagraph(
     justification: JustificationStrategy = JustificationStrategy.None,
     wordBreak: WordBreak = WordBreak.Phrase,
     letterSpacing: Float = 0f,
+    fontRuns: List<FontRun> = emptyList(),
 ): LaidOutParagraph {
     // NaN fails every `<=` budget check, so it must be caught here like a
     // non-positive width: letting it through sends whitespace-only (empty
@@ -63,6 +78,7 @@ public suspend fun HbFontStack.layoutParagraph(
         return LaidOutParagraph.empty(baseDirection = baseDirection, alignment = alignment)
     }
 
+    val normalizedRuns = normalizeFontRuns(fontRuns, text.length)
     val breaks = lineBreakOpportunities(text)
     val rawLines = ArrayList<RawLine>(8)
     var cursor = 0
@@ -88,6 +104,7 @@ public suspend fun HbFontStack.layoutParagraph(
                 features = features,
                 language = language,
                 letterSpacing = letterSpacing,
+                normalizedRuns = normalizedRuns,
             )
         } else {
             pickLine(
@@ -102,6 +119,7 @@ public suspend fun HbFontStack.layoutParagraph(
                 language = language,
                 wordBreak = wordBreak,
                 letterSpacing = letterSpacing,
+                normalizedRuns = normalizedRuns,
             )
         }
         // The first line of the paragraph just resolved its direction; pin it so
@@ -132,6 +150,7 @@ public suspend fun HbFontStack.layoutParagraph(
             features = features,
             language = language,
             justification = justification,
+            normalizedRuns = normalizedRuns,
         )
     }
 
@@ -209,6 +228,7 @@ private suspend fun HbFontStack.pickLine(
     language: HbLanguage,
     wordBreak: WordBreak,
     letterSpacing: Float,
+    normalizedRuns: List<FontRun>,
 ): LinePick {
     var bestEnd = -1
     var bestShape: ShapedParagraph? = null
@@ -229,7 +249,10 @@ private suspend fun HbFontStack.pickLine(
         // (Center / Right / End) and stops a line from reporting width
         // that includes invisible space chars.
         val visibleText = candidateText.trimEndForLineBreak()
-        val candidateShape = shapeParagraph(visibleText, sizePx, baseDirection, features, language)
+        val candidateShape = shapeParagraph(
+            visibleText, sizePx, baseDirection, features, language,
+            sliceNormalizedFontRuns(normalizedRuns, cursor, cursor + visibleText.length),
+        )
         val containsHardBreak = candidateText.indexOfLast { isHardBreakChar(it) } >= 0
 
         val fits = effectiveLineAdvance(candidateShape, letterSpacing) <= maxWidth
@@ -267,6 +290,7 @@ private suspend fun HbFontStack.pickLine(
                     features = features,
                     language = language,
                     letterSpacing = letterSpacing,
+                    normalizedRuns = normalizedRuns,
                 )
             }
             bestEnd = candidateEnd
@@ -285,7 +309,10 @@ private suspend fun HbFontStack.pickLine(
         // Defensive fall-through: no breaks left, consume to end of text.
         val end = text.length
         val visibleText = text.substring(cursor, end).trimEndForLineBreak()
-        val shape = shapeParagraph(visibleText, sizePx, baseDirection, features, language)
+        val shape = shapeParagraph(
+            visibleText, sizePx, baseDirection, features, language,
+            sliceNormalizedFontRuns(normalizedRuns, cursor, cursor + visibleText.length),
+        )
         return LinePick(end, shape, visibleText, breaks.size, endedByHardBreak = false)
     }
     return LinePick(bestEnd, bestShape, bestText, probeIdx, endedByHardBreak)
@@ -315,6 +342,7 @@ private suspend fun HbFontStack.pickLineAnyChar(
     features: List<HbFeature>,
     language: HbLanguage,
     letterSpacing: Float,
+    normalizedRuns: List<FontRun>,
 ): LinePick {
     val capEnd = (cursor + ANY_CHAR_SHAPE_CAP).coerceAtMost(text.length)
     // Stop the shape at the first hard break inside the cap window; we
@@ -324,7 +352,10 @@ private suspend fun HbFontStack.pickLineAnyChar(
 
     val sliceText = text.substring(cursor, sliceEnd)
     val visibleText = sliceText.trimEndForLineBreak()
-    val sliceShape = shapeParagraph(visibleText, sizePx, baseDirection, features, language)
+    val sliceShape = shapeParagraph(
+        visibleText, sizePx, baseDirection, features, language,
+        sliceNormalizedFontRuns(normalizedRuns, cursor, cursor + visibleText.length),
+    )
     val containsHardBreak = sliceText.indexOfLast { isHardBreakChar(it) } >= 0
 
     // Empty visible slice (whitespace-only) is consumed as-is: its advance
@@ -351,6 +382,7 @@ private suspend fun HbFontStack.pickLineAnyChar(
         features = features,
         language = language,
         letterSpacing = letterSpacing,
+        normalizedRuns = normalizedRuns,
     )
 }
 
@@ -383,6 +415,7 @@ private suspend fun HbFontStack.bisectByGrapheme(
     features: List<HbFeature>,
     language: HbLanguage,
     letterSpacing: Float,
+    normalizedRuns: List<FontRun>,
 ): LinePick {
     val cumulative = perIndexCumulativeAdvance(overflowShape, overflowText.length)
     val boundaries = graphemeBreakOpportunities(overflowText)
@@ -416,7 +449,10 @@ private suspend fun HbFontStack.bisectByGrapheme(
         // for an identical re-shape.
         overflowShape
     } else {
-        shapeParagraph(prefixVisible, sizePx, baseDirection, features, language)
+        shapeParagraph(
+            prefixVisible, sizePx, baseDirection, features, language,
+            sliceNormalizedFontRuns(normalizedRuns, cursor, cursor + prefixVisible.length),
+        )
     }
 
     return LinePick(
@@ -618,6 +654,7 @@ private suspend fun HbFontStack.applyJustification(
     features: List<HbFeature>,
     language: HbLanguage,
     justification: JustificationStrategy,
+    normalizedRuns: List<FontRun>,
 ) {
     if (rawLines.size <= 1) return
 
@@ -651,7 +688,16 @@ private suspend fun HbFontStack.applyJustification(
         )
 
         if (justified.justifiedText.length != lineText.length) {
-            val newShape = shapeParagraph(justified.justifiedText, sizePx, baseDirection, features, language)
+            // Slice the paragraph's runs to this line and project them
+            // through the connector insertions so inserted Kashidas or
+            // thin spaces shape with the font of the range they join.
+            val lineRuns = sliceNormalizedFontRuns(normalizedRuns, raw.start, raw.start + lineText.length)
+            val justifiedRuns = justified.originalToJustifiedIndex?.let { m ->
+                remapFontRuns(lineRuns, m, justified.justifiedText.length)
+            } ?: lineRuns
+            val newShape = shapeParagraph(
+                justified.justifiedText, sizePx, baseDirection, features, language, justifiedRuns,
+            )
             rawLines[i] = raw.copy(
                 shape = newShape,
                 shapedText = justified.justifiedText,
